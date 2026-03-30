@@ -211,7 +211,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <ArrowLeft className="h-4 w-4" />
                   Back to customers
                 </Link>
-              ) : pathname === "/loans/new" || pathname === "/loans/search" ? (
+              ) : pathname === "/loans/new" ||
+                pathname === "/loans/search" ||
+                pathname.startsWith("/loans/") ? (
                 <Link
                   href={`/loans${companyQuery}`}
                   className="inline-flex items-center gap-2 transition hover:text-[var(--color-accent-strong)]"
