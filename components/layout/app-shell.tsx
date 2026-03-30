@@ -1,7 +1,13 @@
+"use client";
+
 import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
+  ArrowLeft,
   Building2,
+  ChevronDown,
   CircleDollarSign,
   FileBarChart2,
   HandCoins,
@@ -11,20 +17,86 @@ import {
   UsersRound,
 } from "lucide-react";
 
-const navigation = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Customers", href: "/customers", icon: UsersRound },
-  { label: "Loans", href: "/loans", icon: HandCoins },
-  { label: "Payments", href: "/payments", icon: CircleDollarSign },
-  { label: "Reports", href: "/reports", icon: FileBarChart2 },
-  { label: "Admin", href: "/admin", icon: Settings },
+type NavChild = {
+  label: string;
+  href: string;
+  hotkey?: string;
+};
+
+type NavItem = {
+  label: string;
+  href?: string;
+  icon: typeof LayoutDashboard;
+  children?: NavChild[];
+};
+
+const navigation: NavItem[] = [
+  {
+    label: "Dashboard",
+    href: "/dashboard",
+    icon: LayoutDashboard,
+  },
+  {
+    label: "Customers",
+    icon: UsersRound,
+    children: [
+      { label: "New Customer", href: "/customers/new", hotkey: "F2" },
+      { label: "Search Customer", href: "/customers", hotkey: "F3" },
+    ],
+  },
+  {
+    label: "Loans",
+    icon: HandCoins,
+    children: [
+      { label: "Create New Loan", href: "/loans/new", hotkey: "F4" },
+      { label: "Search Loan", href: "/loans/search", hotkey: "F5" },
+      { label: "Schemes", href: "/schemes", hotkey: "F6" },
+    ],
+  },
+  {
+    label: "Payments",
+    href: "/payments",
+    icon: CircleDollarSign,
+  },
+  {
+    label: "Reports",
+    href: "/reports",
+    icon: FileBarChart2,
+  },
+  {
+    label: "Admin",
+    href: "/admin",
+    icon: Settings,
+  },
 ];
 
+function getSectionFromPath(pathname: string) {
+  if (pathname.startsWith("/customers")) {
+    return "Customers";
+  }
+
+  if (pathname.startsWith("/loans") || pathname.startsWith("/schemes")) {
+    return "Loans";
+  }
+
+  return "";
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const selectedCompany = searchParams.get("company") ?? "Vishnu Bankers - Main Branch";
+  const companyQuery = `?company=${encodeURIComponent(selectedCompany)}`;
+  const [openSection, setOpenSection] = useState(() => getSectionFromPath(pathname));
+
+  useEffect(() => {
+    setOpenSection(getSectionFromPath(pathname));
+  }, [pathname]);
+
   return (
-    <div className="min-h-screen p-4 sm:p-6">
-      <div className="mx-auto grid min-h-[calc(100vh-2rem)] max-w-7xl overflow-hidden rounded-[32px] border border-[var(--color-border)] bg-[rgba(255,255,255,0.55)] shadow-[0_40px_90px_rgba(54,39,19,0.15)] lg:grid-cols-[280px_1fr]">
-        <aside className="flex flex-col justify-between bg-[linear-gradient(180deg,#1f2937_0%,#243447_45%,#312217_100%)] p-6 text-white sm:p-7">
+    <div className="h-screen overflow-hidden p-4 sm:p-6">
+      <div className="mx-auto grid h-[calc(100vh-2rem)] max-w-7xl overflow-hidden rounded-[32px] border border-[var(--color-border)] bg-[rgba(255,255,255,0.55)] shadow-[0_40px_90px_rgba(54,39,19,0.15)] lg:grid-cols-[280px_1fr]">
+        <aside className="flex h-full flex-col justify-between overflow-y-auto bg-[linear-gradient(180deg,#1f2937_0%,#243447_45%,#312217_100%)] p-6 text-white sm:p-7">
           <div>
             <div className="flex items-center gap-3">
               <div className="rounded-2xl bg-white/12 p-3">
@@ -41,15 +113,80 @@ export function AppShell({ children }: { children: ReactNode }) {
             <nav className="mt-10 space-y-2">
               {navigation.map((item) => {
                 const Icon = item.icon;
+                const hasChildren = Boolean(item.children?.length);
+                const isOpen = openSection === item.label;
+                const isSectionActive =
+                  item.href !== undefined
+                    ? pathname === item.href || pathname.startsWith(`${item.href}/`)
+                    : item.label === "Customers"
+                      ? pathname.startsWith("/customers")
+                      : pathname.startsWith("/loans") || pathname.startsWith("/schemes");
+
                 return (
-                  <Link
-                    key={item.label}
-                    href={item.href}
-                    className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium text-white/78 transition hover:bg-white/10 hover:text-white"
-                  >
-                    <Icon className="h-4 w-4" />
-                    <span>{item.label}</span>
-                  </Link>
+                  <div key={item.label} className="space-y-2">
+                    {hasChildren ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOpenSection((current) =>
+                            current === item.label ? "" : item.label,
+                          )
+                        }
+                        className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-sm font-medium transition ${
+                          isSectionActive
+                            ? "bg-white/12 text-white"
+                            : "text-white/78 hover:bg-white/10 hover:text-white"
+                        }`}
+                      >
+                        <span className="flex items-center gap-3">
+                          <Icon className="h-4 w-4" />
+                          <span>{item.label}</span>
+                        </span>
+                        <ChevronDown
+                          className={`h-4 w-4 transition ${isOpen ? "rotate-180" : "rotate-0"}`}
+                        />
+                      </button>
+                    ) : (
+                      <Link
+                        href={`${item.href}${companyQuery}`}
+                        className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition ${
+                          isSectionActive
+                            ? "bg-white/12 text-white"
+                            : "text-white/78 hover:bg-white/10 hover:text-white"
+                        }`}
+                      >
+                        <Icon className="h-4 w-4" />
+                        <span>{item.label}</span>
+                      </Link>
+                    )}
+
+                    {hasChildren && isOpen ? (
+                      <div className="ml-7 space-y-2 border-l border-white/10 pl-4">
+                        {item.children?.map((child) => {
+                          const isChildActive = pathname === child.href;
+
+                          return (
+                            <Link
+                              key={child.label}
+                              href={`${child.href}${companyQuery}`}
+                              className={`flex items-center justify-between rounded-2xl px-3 py-2.5 text-sm transition ${
+                                isChildActive
+                                  ? "bg-white/14 text-white"
+                                  : "text-white/72 hover:bg-white/10 hover:text-white"
+                              }`}
+                            >
+                              <span>{child.label}</span>
+                              {child.hotkey ? (
+                                <span className="rounded-full bg-black/20 px-2 py-1 text-[10px] uppercase tracking-[0.16em]">
+                                  {child.hotkey}
+                                </span>
+                              ) : null}
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
                 );
               })}
             </nav>
@@ -57,31 +194,42 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <div className="rounded-[24px] border border-white/10 bg-white/8 p-5">
             <p className="text-xs uppercase tracking-[0.18em] text-white/55">
-              Current company
+              Active company
             </p>
-            <p className="mt-2 text-lg font-semibold">Anand Finance - Main Branch</p>
-            <p className="mt-2 text-sm leading-7 text-white/70">
-              Multi-company switching is scaffolded now and will be tied to user
-              access rules in the next backend pass.
-            </p>
+            <p className="mt-2 text-lg font-semibold">{selectedCompany}</p>
           </div>
         </aside>
 
-        <div className="flex min-h-full flex-col">
-          <header className="flex flex-col gap-4 border-b border-[var(--color-border)] px-5 py-5 sm:px-8 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">
-                Pawn Operations Console
-              </p>
-              <p className="mt-2 text-sm text-[var(--color-muted)]">
-                Built for customer onboarding, loan servicing, and audit-ready branch work.
-              </p>
+        <div className="flex h-full min-h-0 flex-col overflow-hidden">
+          <header className="relative flex shrink-0 items-center justify-between border-b border-[var(--color-border)] px-5 py-5 sm:px-8">
+            <div className="min-w-[220px] text-sm font-medium text-[var(--color-ink)]">
+              {pathname === "/customers/new" ? (
+                <Link
+                  href={`/customers${companyQuery}`}
+                  className="inline-flex items-center gap-2 transition hover:text-[var(--color-accent-strong)]"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Back to customers
+                </Link>
+              ) : pathname === "/loans/new" || pathname === "/loans/search" ? (
+                <Link
+                  href={`/loans${companyQuery}`}
+                  className="inline-flex items-center gap-2 transition hover:text-[var(--color-accent-strong)]"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Back to loans
+                </Link>
+              ) : null}
+            </div>
+
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[var(--color-border)] bg-white/90 px-5 py-2 text-sm font-semibold text-[var(--color-ink)] shadow-sm">
+              {selectedCompany}
             </div>
 
             <div className="flex items-center gap-3">
-              <div className="flex min-w-[260px] items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm text-[var(--color-muted)]">
+              <div className="flex min-w-[220px] items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm text-[var(--color-muted)]">
                 <Search className="h-4 w-4" />
-                <span>Ctrl + K for global search</span>
+                <span>Search records</span>
               </div>
               <div className="rounded-2xl bg-[var(--color-sidebar)] px-4 py-3 text-sm font-medium text-white">
                 Admin
@@ -89,7 +237,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           </header>
 
-          <main className="flex-1 px-5 py-6 sm:px-8">{children}</main>
+          <main className="min-h-0 flex-1 overflow-y-auto px-5 py-6 sm:px-8">{children}</main>
         </div>
       </div>
     </div>

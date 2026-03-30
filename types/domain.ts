@@ -13,4 +13,20 @@ export type CustomerSummary = {
   fullName: string;
   phoneNumber: string;
   companyId: string;
+  area?: string;
+  remarks?: string;
+};
+
+export type CustomerFormInput = {
+  fullName: string;
+  phoneNumber: string;
+  alternatePhoneNumber?: string;
+  currentAddress?: string;
+  permanentAddress?: string;
+  aadhaarNumber?: string;
+  guardianLabel?: string;
+  guardianName?: string;
+  area?: string;
+  referenceName?: string;
+  remarks?: string;
 };
