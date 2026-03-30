@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
@@ -11,6 +11,7 @@ import {
   CircleDollarSign,
   FileBarChart2,
   HandCoins,
+  Landmark,
   LayoutDashboard,
   Search,
   Settings,
@@ -54,6 +55,14 @@ const navigation: NavItem[] = [
     ],
   },
   {
+    label: "Deposits",
+    icon: Landmark,
+    children: [
+      { label: "Create Deposit", href: "/deposits/new", hotkey: "F7" },
+      { label: "Search Deposit", href: "/deposits/search", hotkey: "F8" },
+    ],
+  },
+  {
     label: "Payments",
     href: "/payments",
     icon: CircleDollarSign,
@@ -79,7 +88,55 @@ function getSectionFromPath(pathname: string) {
     return "Loans";
   }
 
+  if (pathname.startsWith("/deposits")) {
+    return "Deposits";
+  }
+
   return "";
+}
+
+function getSectionActive(label: string, pathname: string, href?: string) {
+  if (href) {
+    return pathname === href || pathname.startsWith(`${href}/`);
+  }
+
+  if (label === "Customers") {
+    return pathname.startsWith("/customers");
+  }
+
+  if (label === "Loans") {
+    return pathname.startsWith("/loans") || pathname.startsWith("/schemes");
+  }
+
+  if (label === "Deposits") {
+    return pathname.startsWith("/deposits");
+  }
+
+  return false;
+}
+
+function getBackLink(pathname: string, companyQuery: string) {
+  if (pathname === "/customers/new") {
+    return { href: `/customers${companyQuery}`, label: "Back to customers" };
+  }
+
+  if (
+    pathname === "/loans/new" ||
+    pathname === "/loans/search" ||
+    pathname.startsWith("/loans/")
+  ) {
+    return { href: `/loans${companyQuery}`, label: "Back to loans" };
+  }
+
+  if (
+    pathname === "/deposits/new" ||
+    pathname === "/deposits/search" ||
+    pathname.startsWith("/deposits/")
+  ) {
+    return { href: `/deposits${companyQuery}`, label: "Back to deposits" };
+  }
+
+  return null;
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -88,6 +145,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const selectedCompany = searchParams.get("company") ?? "Vishnu Bankers - Main Branch";
   const companyQuery = `?company=${encodeURIComponent(selectedCompany)}`;
   const [openSection, setOpenSection] = useState(() => getSectionFromPath(pathname));
+  const backLink = getBackLink(pathname, companyQuery);
 
   useEffect(() => {
     setOpenSection(getSectionFromPath(pathname));
@@ -115,12 +173,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 const Icon = item.icon;
                 const hasChildren = Boolean(item.children?.length);
                 const isOpen = openSection === item.label;
-                const isSectionActive =
-                  item.href !== undefined
-                    ? pathname === item.href || pathname.startsWith(`${item.href}/`)
-                    : item.label === "Customers"
-                      ? pathname.startsWith("/customers")
-                      : pathname.startsWith("/loans") || pathname.startsWith("/schemes");
+                const isSectionActive = getSectionActive(item.label, pathname, item.href);
 
                 return (
                   <div key={item.label} className="space-y-2">
@@ -128,9 +181,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                       <button
                         type="button"
                         onClick={() =>
-                          setOpenSection((current) =>
-                            current === item.label ? "" : item.label,
-                          )
+                          setOpenSection((current) => (current === item.label ? "" : item.label))
                         }
                         className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-sm font-medium transition ${
                           isSectionActive
@@ -203,23 +254,13 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="flex h-full min-h-0 flex-col overflow-hidden">
           <header className="relative flex shrink-0 items-center justify-between border-b border-[var(--color-border)] px-5 py-5 sm:px-8">
             <div className="min-w-[220px] text-sm font-medium text-[var(--color-ink)]">
-              {pathname === "/customers/new" ? (
+              {backLink ? (
                 <Link
-                  href={`/customers${companyQuery}`}
+                  href={backLink.href}
                   className="inline-flex items-center gap-2 transition hover:text-[var(--color-accent-strong)]"
                 >
                   <ArrowLeft className="h-4 w-4" />
-                  Back to customers
-                </Link>
-              ) : pathname === "/loans/new" ||
-                pathname === "/loans/search" ||
-                pathname.startsWith("/loans/") ? (
-                <Link
-                  href={`/loans${companyQuery}`}
-                  className="inline-flex items-center gap-2 transition hover:text-[var(--color-accent-strong)]"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  Back to loans
+                  {backLink.label}
                 </Link>
               ) : null}
             </div>
