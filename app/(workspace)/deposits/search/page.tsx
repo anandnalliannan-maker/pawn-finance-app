@@ -2,12 +2,16 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Search } from "lucide-react";
 
 import { isDateWithinRange } from "@/lib/date-utils";
+import { ALL_COMPANIES, matchesCompanyScope } from "@/lib/companies";
 import { getOutstandingDepositAmount, previewDeposits } from "@/lib/deposits";
 
 export default function SearchDepositPage() {
+  const searchParams = useSearchParams();
+  const selectedCompany = searchParams.get("company") ?? ALL_COMPANIES;
   const [query, setQuery] = useState("");
   const [showActiveOnly, setShowActiveOnly] = useState(false);
   const [fromDate, setFromDate] = useState("");
@@ -15,6 +19,7 @@ export default function SearchDepositPage() {
 
   const filteredDeposits = useMemo(() => {
     return previewDeposits.filter((deposit) => {
+      const matchesCompany = matchesCompanyScope(deposit.company, selectedCompany);
       const matchesQuery = query
         ? [deposit.depositorName, deposit.phoneNumber, deposit.depositorCode, deposit.company]
             .join(" ")
@@ -24,9 +29,9 @@ export default function SearchDepositPage() {
       const matchesActive = showActiveOnly ? deposit.status === "Active" : true;
       const matchesDateRange = isDateWithinRange(deposit.depositDate, fromDate, toDate);
 
-      return matchesQuery && matchesActive && matchesDateRange;
+      return matchesCompany && matchesQuery && matchesActive && matchesDateRange;
     });
-  }, [query, showActiveOnly, fromDate, toDate]);
+  }, [query, selectedCompany, showActiveOnly, fromDate, toDate]);
 
   return (
     <div className="space-y-6">

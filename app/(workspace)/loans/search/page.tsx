@@ -2,12 +2,16 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Search } from "lucide-react";
 
 import { isDateWithinRange } from "@/lib/date-utils";
+import { ALL_COMPANIES, matchesCompanyScope } from "@/lib/companies";
 import { getOutstandingLoanAmount, previewLoans } from "@/lib/loans";
 
 export default function SearchLoanPage() {
+  const searchParams = useSearchParams();
+  const selectedCompany = searchParams.get("company") ?? ALL_COMPANIES;
   const [query, setQuery] = useState("");
   const [showActiveOnly, setShowActiveOnly] = useState(false);
   const [showJewelOnly, setShowJewelOnly] = useState(false);
@@ -16,8 +20,9 @@ export default function SearchLoanPage() {
 
   const filteredLoans = useMemo(() => {
     return previewLoans.filter((loan) => {
+      const matchesCompany = matchesCompanyScope(loan.company, selectedCompany);
       const matchesQuery = query
-        ? [loan.accountNumber, loan.customerName, loan.phoneNumber, loan.loanType]
+        ? [loan.accountNumber, loan.customerName, loan.phoneNumber, loan.loanType, loan.company]
             .join(" ")
             .toLowerCase()
             .includes(query.toLowerCase())
@@ -26,9 +31,9 @@ export default function SearchLoanPage() {
       const matchesJewel = showJewelOnly ? loan.loanType === "Jewel Loan" : true;
       const matchesDateRange = isDateWithinRange(loan.loanDate, fromDate, toDate);
 
-      return matchesQuery && matchesActive && matchesJewel && matchesDateRange;
+      return matchesCompany && matchesQuery && matchesActive && matchesJewel && matchesDateRange;
     });
-  }, [query, showActiveOnly, showJewelOnly, fromDate, toDate]);
+  }, [query, selectedCompany, showActiveOnly, showJewelOnly, fromDate, toDate]);
 
   return (
     <div className="space-y-6">
@@ -40,7 +45,7 @@ export default function SearchLoanPage() {
         <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_auto_auto] xl:items-center">
           <div className="flex items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-white px-4 py-4 text-sm text-[var(--color-muted)]">
             <Search className="h-4 w-4" />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name, phone number, loan type, or account number" className="w-full bg-transparent outline-none" />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name, phone number, loan type, account number, or company" className="w-full bg-transparent outline-none" />
           </div>
           <button type="button" onClick={() => setShowActiveOnly((current) => !current)} className={`rounded-2xl px-4 py-3 text-sm font-medium transition ${showActiveOnly ? "bg-[var(--color-sidebar)] text-white" : "border border-[var(--color-border)] bg-white text-[var(--color-ink)]"}`}>Active loans</button>
           <button type="button" onClick={() => setShowJewelOnly((current) => !current)} className={`rounded-2xl px-4 py-3 text-sm font-medium transition ${showJewelOnly ? "bg-[var(--color-sidebar)] text-white" : "border border-[var(--color-border)] bg-white text-[var(--color-ink)]"}`}>Jewel loans</button>
@@ -54,8 +59,9 @@ export default function SearchLoanPage() {
 
       <section className="app-panel rounded-[30px] p-6 sm:p-8">
         <div className="grid gap-3">
-          <div className="hidden rounded-[24px] bg-[var(--color-panel-strong)] px-5 py-4 text-sm font-semibold text-[var(--color-ink)] lg:grid lg:grid-cols-[0.2fr_0.16fr_0.16fr_0.16fr_0.16fr_0.16fr] lg:items-center">
+          <div className="hidden rounded-[24px] bg-[var(--color-panel-strong)] px-5 py-4 text-sm font-semibold text-[var(--color-ink)] lg:grid lg:grid-cols-[0.18fr_0.18fr_0.14fr_0.14fr_0.14fr_0.12fr_0.1fr] lg:items-center">
             <span>Name</span>
+            <span>Company</span>
             <span>Date</span>
             <span>Phone no.</span>
             <span>Loan type</span>
@@ -65,8 +71,9 @@ export default function SearchLoanPage() {
 
           {filteredLoans.map((loan) => (
             <Link key={loan.accountNumber} href={`/loans/${loan.id}?company=${encodeURIComponent(loan.company)}`} className="rounded-[24px] border border-[var(--color-border)] bg-white px-5 py-4 transition hover:-translate-y-0.5 hover:border-[var(--color-accent)]">
-              <div className="grid gap-3 lg:grid-cols-[0.2fr_0.16fr_0.16fr_0.16fr_0.16fr_0.16fr] lg:items-center">
+              <div className="grid gap-3 lg:grid-cols-[0.18fr_0.18fr_0.14fr_0.14fr_0.14fr_0.12fr_0.1fr] lg:items-center">
                 <Cell label="Name" value={loan.customerName} subValue={loan.accountNumber} strong />
+                <Cell label="Company" value={loan.company} />
                 <Cell label="Date" value={loan.loanDate} />
                 <Cell label="Phone no." value={loan.phoneNumber} />
                 <Cell label="Loan type" value={loan.loanType} />

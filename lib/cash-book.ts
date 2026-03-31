@@ -24,4 +24,16 @@ export const cashBookOpeningBalances: CashBookBalance[] = [
     openingBalance: 171500,
     openingNote: "Sunday carry forward",
   },
+  {
+    date: "31-Mar-2026",
+    company: "Vishnu Bankers - Town Office",
+    openingBalance: 64000,
+    openingNote: "Town office opening cash",
+  },
+  {
+    date: "30-Mar-2026",
+    company: "Vishnu Bankers - Gold Unit",
+    openingBalance: 91000,
+    openingNote: "Gold unit opening balance before new disbursals",
+  },
 ];

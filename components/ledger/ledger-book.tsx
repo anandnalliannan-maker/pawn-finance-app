@@ -1,9 +1,11 @@
 ﻿"use client";
 
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Filter, Search } from "lucide-react";
 
 import { formatIsoDate, isDateWithinRange } from "@/lib/date-utils";
+import { ALL_COMPANIES, matchesCompanyScope } from "@/lib/companies";
 import { ledgerEntries, type LedgerCategory } from "@/lib/ledger";
 
 const ledgerCategories: Array<LedgerCategory | "All"> = ["All", "Incoming Payment", "Outgoing Loan", "Deposit Received", "Tea", "Snacks", "Fuel", "Salary", "Miscellaneous"];
@@ -13,6 +15,8 @@ function formatCurrency(value: number) {
 }
 
 export function LedgerBook({ selectedCompany }: { selectedCompany: string }) {
+  const searchParams = useSearchParams();
+  const companyScope = searchParams.get("company") ?? selectedCompany ?? ALL_COMPANIES;
   const [query, setQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<LedgerCategory | "All">("All");
   const [selectedDirection, setSelectedDirection] = useState<"All" | "Incoming" | "Outgoing">("All");
@@ -21,27 +25,27 @@ export function LedgerBook({ selectedCompany }: { selectedCompany: string }) {
 
   const filteredEntries = useMemo(() => {
     return ledgerEntries.filter((entry) => {
-      const matchesCompany = entry.company === selectedCompany;
-      const matchesQuery = query ? [entry.description, entry.reference, entry.category].join(" ").toLowerCase().includes(query.toLowerCase()) : true;
+      const matchesCompany = matchesCompanyScope(entry.company, companyScope);
+      const matchesQuery = query ? [entry.description, entry.reference, entry.category, entry.company].join(" ").toLowerCase().includes(query.toLowerCase()) : true;
       const matchesCategory = selectedCategory === "All" ? true : entry.category === selectedCategory;
       const matchesDirection = selectedDirection === "All" ? true : entry.direction === selectedDirection;
       const matchesDateRange = isDateWithinRange(entry.date, fromDate, toDate);
       return matchesCompany && matchesQuery && matchesCategory && matchesDirection && matchesDateRange;
     });
-  }, [query, selectedCategory, selectedCompany, selectedDirection, fromDate, toDate]);
+  }, [query, selectedCategory, companyScope, selectedDirection, fromDate, toDate]);
 
   return (
     <div className="space-y-6">
       <section className="app-panel rounded-[30px] p-6 sm:p-8">
         <div className="flex items-center justify-between gap-4"><div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">Ledger Book</p><h1 className="mt-2 text-3xl font-semibold text-[var(--color-ink)]">Full transaction register</h1></div><div className="rounded-2xl bg-[var(--color-panel-strong)] p-3 text-[var(--color-accent-strong)]"><Filter className="h-6 w-6" /></div></div>
         <div className="mt-6 space-y-4">
-          <div className="flex items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-white px-4 py-4 text-sm text-[var(--color-muted)]"><Search className="h-4 w-4" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by description, reference, or category" className="w-full bg-transparent outline-none" /></div>
+          <div className="flex items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-white px-4 py-4 text-sm text-[var(--color-muted)]"><Search className="h-4 w-4" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by description, reference, category, or company" className="w-full bg-transparent outline-none" /></div>
           <div className="grid gap-4 md:grid-cols-2"><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">From date</span><input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">To date</span><input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label></div>
           <div className="flex flex-wrap gap-2">{ledgerCategories.map((category) => (<button key={category} type="button" onClick={() => setSelectedCategory(category)} className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition ${selectedCategory === category ? "bg-[var(--color-sidebar)] text-white" : "border border-[var(--color-border)] bg-white text-[var(--color-muted)]"}`}>{category}</button>))}</div>
           <div className="flex flex-wrap gap-2">{(["All", "Incoming", "Outgoing"] as const).map((direction) => (<button key={direction} type="button" onClick={() => setSelectedDirection(direction)} className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition ${selectedDirection === direction ? "bg-[var(--color-accent)] text-white" : "border border-[var(--color-border)] bg-white text-[var(--color-muted)]"}`}>{direction}</button>))}</div>
         </div>
       </section>
-      <section className="app-panel rounded-[30px] p-6 sm:p-8"><div className="grid gap-3"><div className="hidden rounded-[24px] bg-[var(--color-panel-strong)] px-5 py-4 text-sm font-semibold text-[var(--color-ink)] lg:grid lg:grid-cols-[0.12fr_0.28fr_0.18fr_0.12fr_0.15fr_0.15fr] lg:items-center"><span>Date</span><span>Description</span><span>Category</span><span>Type</span><span>Amount</span><span>Reference</span></div>{filteredEntries.map((entry) => (<article key={entry.id} className="rounded-[24px] border border-[var(--color-border)] bg-white px-5 py-4"><div className="grid gap-3 lg:grid-cols-[0.12fr_0.28fr_0.18fr_0.12fr_0.15fr_0.15fr] lg:items-center"><Cell label="Date" value={entry.date} /><Cell label="Description" value={entry.description} /><Cell label="Category" value={entry.category} /><Cell label="Type" value={entry.direction} /><Cell label="Amount" value={formatCurrency(entry.amount)} /><Cell label="Reference" value={entry.reference} /></div></article>))}</div></section>
+      <section className="app-panel rounded-[30px] p-6 sm:p-8"><div className="grid gap-3"><div className="hidden rounded-[24px] bg-[var(--color-panel-strong)] px-5 py-4 text-sm font-semibold text-[var(--color-ink)] lg:grid lg:grid-cols-[0.12fr_0.2fr_0.22fr_0.14fr_0.1fr_0.12fr_0.1fr] lg:items-center"><span>Date</span><span>Company</span><span>Description</span><span>Category</span><span>Type</span><span>Amount</span><span>Reference</span></div>{filteredEntries.map((entry) => (<article key={entry.id} className="rounded-[24px] border border-[var(--color-border)] bg-white px-5 py-4"><div className="grid gap-3 lg:grid-cols-[0.12fr_0.2fr_0.22fr_0.14fr_0.1fr_0.12fr_0.1fr] lg:items-center"><Cell label="Date" value={entry.date} /><Cell label="Company" value={entry.company} /><Cell label="Description" value={entry.description} /><Cell label="Category" value={entry.category} /><Cell label="Type" value={entry.direction} /><Cell label="Amount" value={formatCurrency(entry.amount)} /><Cell label="Reference" value={entry.reference} /></div></article>))}</div></section>
     </div>
   );
 }

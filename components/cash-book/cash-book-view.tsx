@@ -1,9 +1,11 @@
 ﻿"use client";
 
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { AlertCircle, Calculator, Save, Wallet } from "lucide-react";
 
 import { formatDisplayDate, formatIsoDate, toDisplayDateFromIso } from "@/lib/date-utils";
+import { ALL_COMPANIES, matchesCompanyScope } from "@/lib/companies";
 import { cashBookOpeningBalances } from "@/lib/cash-book";
 import { ledgerEntries } from "@/lib/ledger";
 
@@ -17,32 +19,31 @@ function toAmount(value: string) {
 }
 
 export function CashBookView({ selectedCompany }: { selectedCompany: string }) {
+  const searchParams = useSearchParams();
+  const companyScope = searchParams.get("company") ?? selectedCompany ?? ALL_COMPANIES;
   const [selectedDate, setSelectedDate] = useState(formatIsoDate(new Date()));
   const displayDate = toDisplayDateFromIso(selectedDate);
 
-  const savedOpeningEntry = useMemo(
-    () =>
-      cashBookOpeningBalances.find(
-        (entry) => entry.company === selectedCompany && entry.date === displayDate,
-      ),
-    [displayDate, selectedCompany],
+  const scopedOpeningEntries = useMemo(
+    () => cashBookOpeningBalances.filter((entry) => entry.date === displayDate && matchesCompanyScope(entry.company, companyScope)),
+    [displayDate, companyScope],
   );
 
   const dayEntries = useMemo(() => {
     return ledgerEntries.filter(
-      (entry) => entry.company === selectedCompany && entry.date === displayDate,
+      (entry) => matchesCompanyScope(entry.company, companyScope) && entry.date === displayDate,
     );
-  }, [displayDate, selectedCompany]);
+  }, [companyScope, displayDate]);
 
   return (
     <CashBookBody
-      key={`${selectedCompany}-${selectedDate}`}
-      selectedCompany={selectedCompany}
+      key={`${companyScope}-${selectedDate}`}
+      selectedCompany={companyScope}
       selectedDate={selectedDate}
       displayDate={displayDate}
       dayEntries={dayEntries}
-      openingBalance={savedOpeningEntry?.openingBalance ?? 0}
-      openingNote={savedOpeningEntry?.openingNote ?? "No saved opening note for this date."}
+      openingBalance={scopedOpeningEntries.reduce((sum, entry) => sum + entry.openingBalance, 0)}
+      openingNote={scopedOpeningEntries.length === 1 ? scopedOpeningEntries[0]?.openingNote ?? "No saved opening note for this date." : scopedOpeningEntries.length > 1 ? "Combined opening balances from the selected company scope." : "No saved opening note for this date."}
       onDateChange={setSelectedDate}
     />
   );
@@ -203,7 +204,7 @@ function CashBookBody({
             <MovementRow label="Collections and incoming funds" amount={totalIncoming} description="Cash received from loan payments and outside deposits." incoming />
             <MovementRow label="Net cash movement" amount={totalIncoming - totalOutgoing} description="Incoming minus outgoing for the selected date." highlight />
             <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-4 text-sm text-[var(--color-muted)]">
-              <p className="font-medium text-[var(--color-ink)]">Company</p>
+              <p className="font-medium text-[var(--color-ink)]">Company scope</p>
               <p className="mt-1">{selectedCompany}</p>
               <p className="mt-4 font-medium text-[var(--color-ink)]">Book date</p>
               <p className="mt-1">{displayDate || formatDisplayDate(new Date())}</p>
@@ -220,6 +221,7 @@ function CashBookBody({
           <table className="min-w-full border-collapse">
             <thead>
               <tr className="bg-[var(--color-panel-strong)] text-left text-sm text-[var(--color-ink)]">
+                <th className="px-4 py-3 font-semibold">Company</th>
                 <th className="px-4 py-3 font-semibold">Category</th>
                 <th className="px-4 py-3 font-semibold">Description</th>
                 <th className="px-4 py-3 font-semibold">Type</th>
@@ -231,6 +233,7 @@ function CashBookBody({
               {dayEntries.length ? (
                 dayEntries.map((entry) => (
                   <tr key={entry.id} className="border-t border-[var(--color-border)] text-sm text-[var(--color-muted)]">
+                    <td className="px-4 py-3">{entry.company}</td>
                     <td className="px-4 py-3">{entry.category}</td>
                     <td className="px-4 py-3">{entry.description}</td>
                     <td className="px-4 py-3">{entry.direction}</td>
@@ -240,7 +243,7 @@ function CashBookBody({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-sm text-[var(--color-muted)]">
+                  <td colSpan={6} className="px-4 py-6 text-center text-sm text-[var(--color-muted)]">
                     No ledger transactions available for this date.
                   </td>
                 </tr>

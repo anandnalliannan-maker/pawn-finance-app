@@ -1,20 +1,7 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { Building2 } from "lucide-react";
 
-const companies = [
-  {
-    name: "Vishnu Bankers - Main Branch",
-    code: "VBM001",
-  },
-  {
-    name: "Vishnu Bankers - Town Office",
-    code: "VBT002",
-  },
-  {
-    name: "Vishnu Bankers - Gold Unit",
-    code: "VBG003",
-  },
-];
+import { companyOptions } from "@/lib/companies";
 
 export default function SelectCompanyPage() {
   return (
@@ -30,7 +17,7 @@ export default function SelectCompanyPage() {
         </div>
 
         <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-          {companies.map((company) => (
+          {companyOptions.map((company) => (
             <Link
               key={company.code}
               href={`/dashboard?company=${encodeURIComponent(company.name)}`}
