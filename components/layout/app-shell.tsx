@@ -6,10 +6,11 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
+  BookOpen,
   Building2,
   ChevronDown,
-  CircleDollarSign,
   FileBarChart2,
+  FileText,
   HandCoins,
   Landmark,
   LayoutDashboard,
@@ -63,9 +64,14 @@ const navigation: NavItem[] = [
     ],
   },
   {
-    label: "Payments",
-    href: "/payments",
-    icon: CircleDollarSign,
+    label: "Vouchers",
+    href: "/vouchers",
+    icon: FileText,
+  },
+  {
+    label: "Ledger",
+    href: "/ledger",
+    icon: BookOpen,
   },
   {
     label: "Reports",
