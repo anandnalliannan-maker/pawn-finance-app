@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { Camera, Paperclip, Save } from "lucide-react";
@@ -16,6 +16,12 @@ type CustomerFormState = {
   referenceName: string;
   remarks: string;
 };
+
+const existingCustomers = [
+  { phoneNumber: "+91 98400 12345", aadhaarNumber: "4587 9987 1120" },
+  { phoneNumber: "+91 98940 55123", aadhaarNumber: "8876 5523 1098" },
+  { phoneNumber: "+91 97890 44002", aadhaarNumber: "7744 6622 1144" },
+];
 
 const initialState: CustomerFormState = {
   fullName: "",
@@ -103,6 +109,23 @@ export function CustomerRegistrationForm() {
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    const duplicatePhone = existingCustomers.some(
+      (customer) => customer.phoneNumber.replace(/\s+/g, "") === formState.phoneNumber.replace(/\s+/g, ""),
+    );
+    const duplicateAadhaar = existingCustomers.some(
+      (customer) => customer.aadhaarNumber.replace(/\s+/g, "") === formState.aadhaarNumber.replace(/\s+/g, ""),
+    );
+
+    if (duplicatePhone || duplicateAadhaar) {
+      setStatusMessage(
+        duplicatePhone
+          ? "Customer cannot be saved because the phone number already exists."
+          : "Customer cannot be saved because the Aadhaar number already exists.",
+      );
+      return;
+    }
+
     setStatusMessage("Customer form updated. Save wiring to Supabase is the next backend step.");
   }
 
@@ -130,137 +153,53 @@ export function CustomerRegistrationForm() {
 
       <div className="mt-8 space-y-8">
         <section className="grid gap-5 md:grid-cols-2">
-          <FormField
-            label="Customer Name"
-            name="fullName"
-            value={formState.fullName}
-            onChange={handleChange}
-            placeholder="Enter full name"
-          />
-          <FormField
-            label="Phone Number"
-            name="phoneNumber"
-            value={formState.phoneNumber}
-            onChange={handleChange}
-            placeholder="+91 98765 43210"
-          />
-          <FormField
-            label="Alternate Phone"
-            name="alternatePhoneNumber"
-            value={formState.alternatePhoneNumber}
-            onChange={handleChange}
-            placeholder="+91 90000 00000"
-          />
-          <FormField
-            label="Aadhaar Number"
-            name="aadhaarNumber"
-            value={formState.aadhaarNumber}
-            onChange={handleChange}
-            placeholder="XXXX XXXX XXXX"
-          />
+          <FormField label="Customer Name" name="fullName" value={formState.fullName} onChange={handleChange} placeholder="Enter full name" />
+          <FormField label="Phone Number" name="phoneNumber" value={formState.phoneNumber} onChange={handleChange} placeholder="+91 98765 43210" />
+          <FormField label="Alternate Phone" name="alternatePhoneNumber" value={formState.alternatePhoneNumber} onChange={handleChange} placeholder="+91 90000 00000" />
+          <FormField label="Aadhaar Number" name="aadhaarNumber" value={formState.aadhaarNumber} onChange={handleChange} placeholder="XXXX XXXX XXXX" />
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-[var(--color-muted)]">
-              Guardian Label
-            </span>
-            <select
-              value={formState.guardianLabel}
-              onChange={(event) => handleChange("guardianLabel", event.target.value)}
-              className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]"
-            >
+            <span className="text-sm font-medium text-[var(--color-muted)]">Guardian Label</span>
+            <select value={formState.guardianLabel} onChange={(event) => handleChange("guardianLabel", event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]">
               <option value="s/o">s/o</option>
               <option value="d/o">d/o</option>
               <option value="w/o">w/o</option>
             </select>
           </label>
-          <FormField
-            label="Guardian Name"
-            name="guardianName"
-            value={formState.guardianName}
-            onChange={handleChange}
-            placeholder="Enter guardian name"
-          />
+          <FormField label="Guardian Name" name="guardianName" value={formState.guardianName} onChange={handleChange} placeholder="Enter guardian name" />
         </section>
 
         <section className="grid gap-5 md:grid-cols-2">
-          <FormField
-            label="Current Address"
-            name="currentAddress"
-            value={formState.currentAddress}
-            onChange={handleChange}
-            placeholder="Door no, street, locality"
-            textarea
-          />
+          <FormField label="Current Address" name="currentAddress" value={formState.currentAddress} onChange={handleChange} placeholder="Door no, street, locality" textarea />
 
           <div className="space-y-3">
             <label className="flex items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-page)] px-4 py-3 text-sm text-[var(--color-ink)]">
-              <input
-                type="checkbox"
-                checked={sameAsCurrentAddress}
-                onChange={(event) => handleAddressToggle(event.target.checked)}
-                className="h-4 w-4 rounded border-[var(--color-border)]"
-              />
+              <input type="checkbox" checked={sameAsCurrentAddress} onChange={(event) => handleAddressToggle(event.target.checked)} className="h-4 w-4 rounded border-[var(--color-border)]" />
               Permanent address same as current address
             </label>
 
-            <FormField
-              label="Permanent Address"
-              name="permanentAddress"
-              value={formState.permanentAddress}
-              onChange={handleChange}
-              placeholder="Permanent address"
-              textarea
-            />
+            <FormField label="Permanent Address" name="permanentAddress" value={formState.permanentAddress} onChange={handleChange} placeholder="Permanent address" textarea />
           </div>
         </section>
 
         <section className="grid gap-5 md:grid-cols-3">
-          <FormField
-            label="Area"
-            name="area"
-            value={formState.area}
-            onChange={handleChange}
-            placeholder="Area / locality"
-          />
-          <FormField
-            label="Reference"
-            name="referenceName"
-            value={formState.referenceName}
-            onChange={handleChange}
-            placeholder="Reference contact"
-          />
-          <FormField
-            label="Remarks"
-            name="remarks"
-            value={formState.remarks}
-            onChange={handleChange}
-            placeholder="Internal remarks"
-            textarea
-          />
+          <FormField label="Area" name="area" value={formState.area} onChange={handleChange} placeholder="Area / locality" />
+          <FormField label="Reference" name="referenceName" value={formState.referenceName} onChange={handleChange} placeholder="Reference contact" />
+          <FormField label="Remarks" name="remarks" value={formState.remarks} onChange={handleChange} placeholder="Internal remarks" textarea />
         </section>
 
         <section className="rounded-[24px] border border-[var(--color-border)] bg-white p-5">
           <div className="flex items-center gap-3 text-[var(--color-ink)]">
             <Paperclip className="h-4 w-4 text-[var(--color-accent)]" />
-            <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--color-accent)]">
-              ID Proof Attachment
-            </p>
+            <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--color-accent)]">ID Proof Attachment</p>
           </div>
-          <input
-            type="file"
-            className="mt-4 block w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-page)] px-4 py-3 text-sm text-[var(--color-muted)]"
-          />
+          <input type="file" className="mt-4 block w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-page)] px-4 py-3 text-sm text-[var(--color-muted)]" />
         </section>
       </div>
 
       <div className="mt-8 flex flex-col gap-4 border-t border-[var(--color-border)] pt-6 lg:flex-row lg:items-center lg:justify-between">
-        <p className="max-w-3xl text-sm leading-7 text-[var(--color-muted)]">
-          {statusMessage}
-        </p>
+        <p className="max-w-3xl text-sm leading-7 text-[var(--color-muted)]">{statusMessage}</p>
 
-        <button
-          type="submit"
-          className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--color-accent-strong)]"
-        >
+        <button type="submit" className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--color-accent-strong)]">
           <Save className="h-4 w-4" />
           Save Customer  F2
         </button>
