@@ -6,6 +6,7 @@ import {
   normalizePhoneNumber,
   type CreateCustomerPayload,
 } from "@/lib/customers";
+import { buildAuthErrorResponse, canAccessCompanyName, requireApiSession } from "@/lib/server/auth";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -22,6 +23,7 @@ type CustomerSelectRow = {
   area: string | null;
   aadhaar_number: string | null;
   profile_photo_path: string | null;
+  company_id: string;
   companies: CompanyRelation;
 };
 
@@ -41,8 +43,9 @@ function getCompanyName(companies: CompanyRelation) {
 
 export async function GET() {
   try {
+    const session = await requireApiSession();
     const supabase = getSupabaseServerClient();
-    const { data, error } = await supabase
+    let query = supabase
       .from("customers")
       .select(`
         id,
@@ -54,10 +57,20 @@ export async function GET() {
         area,
         aadhaar_number,
         profile_photo_path,
+        company_id,
         companies!inner(name)
       `)
       .order("created_at", { ascending: false })
       .limit(250);
+
+    if (session.role !== "admin") {
+      if (!session.companies.length) {
+        return NextResponse.json({ customers: [] });
+      }
+      query = query.in("company_id", session.companies.map((company) => company.id));
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
@@ -82,6 +95,10 @@ export async function GET() {
 
     return NextResponse.json({ customers });
   } catch (error) {
+    const authResponse = buildAuthErrorResponse(error);
+    if (authResponse) {
+      return authResponse;
+    }
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : "Unable to load customers.",
@@ -93,6 +110,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const session = await requireApiSession();
     const payload = (await request.json()) as CreateCustomerPayload;
     const supabase = getSupabaseServerClient();
 
@@ -106,6 +124,10 @@ export async function POST(request: Request) {
         { error: "Company, customer name, and phone number are required." },
         { status: 400 },
       );
+    }
+
+    if (!canAccessCompanyName(session, companyName)) {
+      return NextResponse.json({ error: "You do not have access to the selected company." }, { status: 403 });
     }
 
     const { data: company, error: companyError } = await supabase
@@ -139,13 +161,9 @@ export async function POST(request: Request) {
     }
 
     const existingRows = (duplicateCustomers ?? []) as DuplicateCustomerRow[];
-    const phoneExists = existingRows.some(
-      (customer) => customer.phone_number_normalized === normalizedPhone,
-    );
+    const phoneExists = existingRows.some((customer) => customer.phone_number_normalized === normalizedPhone);
     const aadhaarExists = normalizedAadhaar
-      ? existingRows.some(
-          (customer) => customer.aadhaar_number_normalized === normalizedAadhaar,
-        )
+      ? existingRows.some((customer) => customer.aadhaar_number_normalized === normalizedAadhaar)
       : false;
 
     if (phoneExists || aadhaarExists) {
@@ -172,6 +190,8 @@ export async function POST(request: Request) {
       area: payload.area?.trim() || null,
       reference_name: payload.referenceName?.trim() || null,
       remarks: payload.remarks?.trim() || null,
+      created_by: session.userId,
+      updated_by: session.userId,
     };
 
     const { data: insertedCustomer, error: insertError } = await supabase
@@ -187,6 +207,7 @@ export async function POST(request: Request) {
         area,
         aadhaar_number,
         profile_photo_path,
+        company_id,
         companies!inner(name)
       `)
       .single();
@@ -200,6 +221,7 @@ export async function POST(request: Request) {
     const { error: auditError } = await supabase.from("customer_audit_log").insert({
       customer_id: customer.id,
       action: "created",
+      changed_by: session.userId,
       old_data: null,
       new_data: insertPayload,
     });
@@ -231,6 +253,10 @@ export async function POST(request: Request) {
       { status: 201 },
     );
   } catch (error) {
+    const authResponse = buildAuthErrorResponse(error);
+    if (authResponse) {
+      return authResponse;
+    }
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : "Unable to save customer.",

@@ -1,5 +1,7 @@
 import { formatDisplayDate } from "@/lib/date-utils";
 import type { CreateDepositPayload, DepositPaymentRecord, DepositRecord } from "@/lib/deposits";
+import { canAccessCompanyId, type AppSession } from "@/lib/server/auth";
+import { postLedgerEntry } from "@/lib/server/ledger";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 type CompanyRelation = { name: string } | { name: string }[] | null;
@@ -15,6 +17,7 @@ type DepositorRelation = {
 
 type DepositRow = {
   id: string;
+  company_id: string;
   deposit_date: string;
   deposit_amount: number | string;
   interest_percent: number | string;
@@ -76,14 +79,28 @@ function mapDeposit(row: DepositRow, payments: DepositPaymentRow[]): DepositReco
   };
 }
 
-export async function listDeposits() {
+async function fetchDepositRows(session: AppSession) {
   const supabase = getSupabaseServerClient();
-  const { data: depositsData, error: depositsError } = await supabase
+  let query = supabase
     .from("deposits")
-    .select("id, deposit_date, deposit_amount, interest_percent, reference_name, address, supporting_document_paths, status, companies!inner(name), depositors!inner(depositor_code, display_name, phone_number)")
+    .select("id, company_id, deposit_date, deposit_amount, interest_percent, reference_name, address, supporting_document_paths, status, companies!inner(name), depositors!inner(depositor_code, display_name, phone_number)")
     .order("deposit_date", { ascending: false });
-  if (depositsError) throw new Error(depositsError.message);
-  const deposits = (depositsData ?? []) as DepositRow[];
+
+  if (session.role !== "admin") {
+    if (!session.companies.length) {
+      return [] as DepositRow[];
+    }
+    query = query.in("company_id", session.companies.map((company) => company.id));
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return (data ?? []) as DepositRow[];
+}
+
+export async function listDeposits(session: AppSession) {
+  const supabase = getSupabaseServerClient();
+  const deposits = await fetchDepositRows(session);
   const ids = deposits.map((deposit) => deposit.id);
   const paymentsByDeposit = new Map<string, DepositPaymentRow[]>();
   if (ids.length) {
@@ -102,16 +119,17 @@ export async function listDeposits() {
   return deposits.map((deposit) => mapDeposit(deposit, paymentsByDeposit.get(deposit.id) ?? []));
 }
 
-export async function getDepositDetailById(depositId: string) {
-  const all = await listDeposits();
+export async function getDepositDetailById(session: AppSession, depositId: string) {
+  const all = await listDeposits(session);
   return all.find((deposit) => deposit.id === depositId) ?? null;
 }
 
-export async function createDeposit(payload: CreateDepositPayload) {
+export async function createDeposit(session: AppSession, payload: CreateDepositPayload) {
   const supabase = getSupabaseServerClient();
   const { data: company, error: companyError } = await supabase.from("companies").select("id, name").eq("name", payload.companyName).maybeSingle();
   if (companyError) throw new Error(companyError.message);
   if (!company) throw new Error("Selected company was not found.");
+  if (!canAccessCompanyId(session, company.id as string)) throw new Error("You do not have access to the selected company.");
 
   const { data: depositor, error: depositorError } = await supabase
     .from("depositors")
@@ -122,6 +140,8 @@ export async function createDeposit(payload: CreateDepositPayload) {
       phone_number: payload.phoneNumber.trim() || null,
       address: payload.address?.trim() || null,
       remarks: payload.reference?.trim() || null,
+      created_by: session.userId,
+      updated_by: session.userId,
     })
     .select("id")
     .single();
@@ -138,17 +158,44 @@ export async function createDeposit(payload: CreateDepositPayload) {
       reference_name: payload.reference?.trim() || null,
       address: payload.address?.trim() || null,
       supporting_document_paths: payload.supportingDocuments ?? [],
+      created_by: session.userId,
+      updated_by: session.userId,
     })
     .select("id")
     .single();
   if (depositError) throw new Error(depositError.message);
 
-  return getDepositDetailById(deposit.id as string);
+  await postLedgerEntry({
+    companyId: company.id as string,
+    entryDate: payload.depositDate,
+    category: "deposit_received",
+    direction: "incoming",
+    description: "Business deposit received",
+    reference: payload.depositorName.trim(),
+    amount: payload.depositAmount,
+    sourceType: "deposit_received",
+    sourceId: deposit.id as string,
+    createdBy: session.userId,
+    metadata: {
+      interestPercent: payload.interestPercent,
+    },
+  });
+
+  return getDepositDetailById(session, deposit.id as string);
 }
 
-export async function recordDepositPayment(depositId: string, payload: { paymentDate: string; paymentFrom: string; paymentUpto: string; principalPayment: number; interestPayment: number; notes?: string }) {
+export async function recordDepositPayment(session: AppSession, depositId: string, payload: { paymentDate: string; paymentFrom: string; paymentUpto: string; principalPayment: number; interestPayment: number; notes?: string }) {
   const supabase = getSupabaseServerClient();
-  const { error } = await supabase.from("deposit_payments").insert({
+  const { data: deposit, error: depositError } = await supabase
+    .from("deposits")
+    .select("id, company_id, depositors!inner(display_name)")
+    .eq("id", depositId)
+    .maybeSingle();
+  if (depositError) throw new Error(depositError.message);
+  if (!deposit) throw new Error("Deposit was not found.");
+  if (!canAccessCompanyId(session, deposit.company_id as string)) throw new Error("You do not have access to this deposit.");
+
+  const { data: paymentRow, error } = await supabase.from("deposit_payments").insert({
     deposit_id: depositId,
     payment_date: payload.paymentDate,
     payment_from: payload.paymentFrom,
@@ -156,7 +203,26 @@ export async function recordDepositPayment(depositId: string, payload: { payment
     principal_payment: payload.principalPayment,
     interest_payment: payload.interestPayment,
     notes: payload.notes?.trim() || null,
-  });
+    created_by: session.userId,
+  }).select("id").single();
   if (error) throw new Error(error.message);
-  return getDepositDetailById(depositId);
+
+  await postLedgerEntry({
+    companyId: deposit.company_id as string,
+    entryDate: payload.paymentDate,
+    category: "deposit_payout",
+    direction: "outgoing",
+    description: "Deposit payout recorded",
+    reference: asArray(deposit.depositors)[0]?.display_name ?? "Deposit payout",
+    amount: payload.principalPayment + payload.interestPayment,
+    sourceType: "deposit_payout",
+    sourceId: paymentRow.id as string,
+    createdBy: session.userId,
+    metadata: {
+      principalPayment: payload.principalPayment,
+      interestPayment: payload.interestPayment,
+    },
+  });
+
+  return getDepositDetailById(session, depositId);
 }

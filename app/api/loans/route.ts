@@ -1,15 +1,19 @@
 import { NextResponse } from "next/server";
 
 import type { CreateLoanPayload } from "@/lib/loans";
+import { buildAuthErrorResponse, canAccessCompanyName, requireApiSession } from "@/lib/server/auth";
 import { createLoan, listLoans } from "@/lib/server/loans";
 
 export const runtime = "nodejs";
 
 export async function GET() {
   try {
-    const loans = await listLoans();
+    const session = await requireApiSession();
+    const loans = await listLoans(session);
     return NextResponse.json({ loans });
   } catch (error) {
+    const authResponse = buildAuthErrorResponse(error);
+    if (authResponse) return authResponse;
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unable to load loans." },
       { status: 500 },
@@ -19,6 +23,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const session = await requireApiSession();
     const payload = (await request.json()) as CreateLoanPayload;
 
     if (!payload.companyName?.trim() || !payload.customerId?.trim()) {
@@ -26,6 +31,10 @@ export async function POST(request: Request) {
         { error: "Company and customer are required." },
         { status: 400 },
       );
+    }
+
+    if (!canAccessCompanyName(session, payload.companyName)) {
+      return NextResponse.json({ error: "You do not have access to the selected company." }, { status: 403 });
     }
 
     if (!payload.accountNumber?.trim() || !payload.loanDate || !payload.loanType) {
@@ -42,7 +51,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const loan = await createLoan(payload);
+    const loan = await createLoan(session, payload);
     return NextResponse.json(
       {
         loan,
@@ -51,6 +60,8 @@ export async function POST(request: Request) {
       { status: 201 },
     );
   } catch (error) {
+    const authResponse = buildAuthErrorResponse(error);
+    if (authResponse) return authResponse;
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unable to save loan." },
       { status: 500 },

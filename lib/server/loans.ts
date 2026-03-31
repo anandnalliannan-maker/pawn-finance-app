@@ -1,5 +1,7 @@
 import { formatDisplayDate, parseAppDate } from "@/lib/date-utils";
 import type { CreateLoanPayload, LoanPaymentRecord, LoanRecord } from "@/lib/loans";
+import { canAccessCompanyId, type AppSession } from "@/lib/server/auth";
+import { postLedgerEntry } from "@/lib/server/ledger";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 type CompanyRelation = { name: string } | { name: string }[] | null;
@@ -176,9 +178,9 @@ function parseAccountNumber(accountNumber: string) {
   };
 }
 
-export async function listLoans() {
+async function fetchLoanRows(session: AppSession) {
   const supabase = getSupabaseServerClient();
-  const { data: loansData, error: loansError } = await supabase
+  let query = supabase
     .from("loans")
     .select(`
       id,
@@ -208,13 +210,25 @@ export async function listLoans() {
     .order("loan_date", { ascending: false })
     .limit(250);
 
-  if (loansError) {
-    throw new Error(loansError.message);
+  if (session.role !== "admin") {
+    if (!session.companies.length) {
+      return [] as LoanRow[];
+    }
+    query = query.in("company_id", session.companies.map((company) => company.id));
   }
 
-  const loans = (loansData ?? []) as LoanRow[];
-  const loanIds = loans.map((loan) => loan.id);
+  const { data, error } = await query;
+  if (error) {
+    throw new Error(error.message);
+  }
 
+  return (data ?? []) as LoanRow[];
+}
+
+export async function listLoans(session: AppSession) {
+  const loans = await fetchLoanRows(session);
+  const loanIds = loans.map((loan) => loan.id);
+  const supabase = getSupabaseServerClient();
   const paymentsByLoanId = new Map<string, LoanPaymentRow[]>();
   const jewelItemsByLoanId = new Map<string, LoanJewelRow[]>();
 
@@ -252,57 +266,17 @@ export async function listLoans() {
     }
   }
 
-  return loans.map((loan) =>
-    buildLoanRecord(
-      loan,
-      paymentsByLoanId.get(loan.id) ?? [],
-      jewelItemsByLoanId.get(loan.id) ?? [],
-    ),
-  );
+  return loans.map((loan) => buildLoanRecord(loan, paymentsByLoanId.get(loan.id) ?? [], jewelItemsByLoanId.get(loan.id) ?? []));
 }
 
-export async function getLoanDetailById(loanId: string) {
-  const supabase = getSupabaseServerClient();
-  const { data: loanData, error: loanError } = await supabase
-    .from("loans")
-    .select(`
-      id,
-      account_number,
-      customer_id,
-      company_id,
-      loan_date,
-      loan_type,
-      scheme_name,
-      interest_percent,
-      original_loan_amount,
-      supporting_document_paths,
-      status,
-      customers!inner(
-        id,
-        customer_code,
-        full_name,
-        phone_number,
-        profile_photo_path,
-        current_address,
-        permanent_address,
-        aadhaar_number,
-        area
-      ),
-      companies!inner(name)
-    `)
-    .eq("id", loanId)
-    .maybeSingle();
-
-  if (loanError) {
-    throw new Error(loanError.message);
-  }
-
-  if (!loanData) {
+export async function getLoanDetailById(session: AppSession, loanId: string) {
+  const loans = await fetchLoanRows(session);
+  const loan = loans.find((item) => item.id === loanId);
+  if (!loan) {
     return null;
   }
 
-  const loan = loanData as LoanRow;
-
+  const supabase = getSupabaseServerClient();
   const [{ data: paymentsData, error: paymentsError }, { data: jewelData, error: jewelError }] = await Promise.all([
     supabase
       .from("loan_payments")
@@ -324,14 +298,10 @@ export async function getLoanDetailById(loanId: string) {
     throw new Error(jewelError.message);
   }
 
-  return buildLoanRecord(
-    loan,
-    (paymentsData ?? []) as LoanPaymentRow[],
-    (jewelData ?? []) as LoanJewelRow[],
-  );
+  return buildLoanRecord(loan, (paymentsData ?? []) as LoanPaymentRow[], (jewelData ?? []) as LoanJewelRow[]);
 }
 
-export async function createLoan(payload: CreateLoanPayload) {
+export async function createLoan(session: AppSession, payload: CreateLoanPayload) {
   const supabase = getSupabaseServerClient();
   const companyName = payload.companyName.trim();
   const accountNumber = payload.accountNumber.trim();
@@ -355,9 +325,13 @@ export async function createLoan(payload: CreateLoanPayload) {
     throw new Error("Selected company was not found.");
   }
 
+  if (!canAccessCompanyId(session, company.id as string)) {
+    throw new Error("You do not have access to the selected company.");
+  }
+
   const { data: customer, error: customerError } = await supabase
     .from("customers")
-    .select("id, company_id")
+    .select("id, company_id, full_name")
     .eq("id", payload.customerId)
     .maybeSingle();
 
@@ -387,24 +361,24 @@ export async function createLoan(payload: CreateLoanPayload) {
     throw new Error("This account number already exists.");
   }
 
-  const insertLoan = {
-    account_number: accountNumber,
-    account_number_sequence: parsedAccount.sequence,
-    financial_year_start: parsedAccount.financialYearStart,
-    financial_year_label: parsedAccount.financialYearLabel,
-    customer_id: payload.customerId,
-    company_id: company.id as string,
-    loan_date: payload.loanDate,
-    loan_type: payload.loanType,
-    scheme_name: payload.schemeName?.trim() || null,
-    interest_percent: payload.interestPercent,
-    original_loan_amount: payload.loanAmount,
-    supporting_document_paths: payload.supportingDocuments ?? [],
-  };
-
   const { data: insertedLoan, error: insertError } = await supabase
     .from("loans")
-    .insert(insertLoan)
+    .insert({
+      account_number: accountNumber,
+      account_number_sequence: parsedAccount.sequence,
+      financial_year_start: parsedAccount.financialYearStart,
+      financial_year_label: parsedAccount.financialYearLabel,
+      customer_id: payload.customerId,
+      company_id: company.id as string,
+      loan_date: payload.loanDate,
+      loan_type: payload.loanType,
+      scheme_name: payload.schemeName?.trim() || null,
+      interest_percent: payload.interestPercent,
+      original_loan_amount: payload.loanAmount,
+      supporting_document_paths: payload.supportingDocuments ?? [],
+      created_by: session.userId,
+      updated_by: session.userId,
+    })
     .select("id")
     .single();
 
@@ -430,10 +404,28 @@ export async function createLoan(payload: CreateLoanPayload) {
     }
   }
 
-  return getLoanDetailById(insertedLoan.id);
+  await postLedgerEntry({
+    companyId: company.id as string,
+    entryDate: payload.loanDate,
+    category: "outgoing_loan",
+    direction: "outgoing",
+    description: `Loan disbursed for account ${accountNumber}`,
+    reference: customer.full_name as string,
+    amount: payload.loanAmount,
+    sourceType: "loan_disbursal",
+    sourceId: insertedLoan.id as string,
+    createdBy: session.userId,
+    metadata: {
+      loanType: payload.loanType,
+      accountNumber,
+    },
+  });
+
+  return getLoanDetailById(session, insertedLoan.id as string);
 }
 
 export async function recordLoanPayment(
+  session: AppSession,
   loanId: string,
   payload: {
     paymentDate: string;
@@ -447,7 +439,7 @@ export async function recordLoanPayment(
   const supabase = getSupabaseServerClient();
   const { data: loan, error: loanError } = await supabase
     .from("loans")
-    .select("id, status")
+    .select("id, status, company_id, account_number, customers!inner(full_name)")
     .eq("id", loanId)
     .maybeSingle();
 
@@ -459,11 +451,15 @@ export async function recordLoanPayment(
     throw new Error("Loan was not found.");
   }
 
+  if (!canAccessCompanyId(session, loan.company_id as string)) {
+    throw new Error("You do not have access to this loan.");
+  }
+
   if (loan.status === "closed") {
     throw new Error("Closed loans cannot receive new payments.");
   }
 
-  const { error: paymentError } = await supabase.from("loan_payments").insert({
+  const { data: paymentRow, error: paymentError } = await supabase.from("loan_payments").insert({
     loan_id: loanId,
     payment_date: payload.paymentDate,
     payment_from: payload.paymentFrom,
@@ -471,27 +467,52 @@ export async function recordLoanPayment(
     principal_payment: payload.principalPayment,
     interest_payment: payload.interestPayment,
     notes: payload.notes?.trim() || null,
-  });
+    created_by: session.userId,
+  }).select("id").single();
 
   if (paymentError) {
     throw new Error(paymentError.message);
   }
 
-  return getLoanDetailById(loanId);
+  await postLedgerEntry({
+    companyId: loan.company_id as string,
+    entryDate: payload.paymentDate,
+    category: "incoming_payment",
+    direction: "incoming",
+    description: `Loan payment received for account ${loan.account_number as string}`,
+    reference: asArray(loan.customers)[0]?.full_name ?? "Loan payment",
+    amount: payload.principalPayment + payload.interestPayment,
+    sourceType: "loan_payment",
+    sourceId: paymentRow.id as string,
+    createdBy: session.userId,
+    metadata: {
+      principalPayment: payload.principalPayment,
+      interestPayment: payload.interestPayment,
+      paymentFrom: payload.paymentFrom,
+      paymentUpto: payload.paymentUpto,
+    },
+  });
+
+  return getLoanDetailById(session, loanId);
 }
 
-export async function closeLoan(loanId: string) {
+export async function closeLoan(session: AppSession, loanId: string) {
   const supabase = getSupabaseServerClient();
-  const loan = await getLoanDetailById(loanId);
+  const loanRow = await supabase.from("loans").select("company_id").eq("id", loanId).maybeSingle();
+  if (loanRow.error) {
+    throw new Error(loanRow.error.message);
+  }
+  if (!loanRow.data || !canAccessCompanyId(session, loanRow.data.company_id as string)) {
+    throw new Error("Loan was not found.");
+  }
+
+  const loan = await getLoanDetailById(session, loanId);
 
   if (!loan) {
     throw new Error("Loan was not found.");
   }
 
-  const outstandingPrincipal = Math.max(
-    loan.originalLoanAmount - loan.payments.reduce((total, payment) => total + payment.principalPayment, 0),
-    0,
-  );
+  const outstandingPrincipal = Math.max(loan.originalLoanAmount - loan.payments.reduce((total, payment) => total + payment.principalPayment, 0), 0);
 
   const latestInterestUpto = loan.payments
     .map((payment) => parseAppDate(payment.paymentUpto))
@@ -509,14 +530,12 @@ export async function closeLoan(loanId: string) {
 
   const { error: closeError } = await supabase
     .from("loans")
-    .update({ status: "closed", closed_at: new Date().toISOString() })
+    .update({ status: "closed", closed_at: new Date().toISOString(), closed_by: session.userId, updated_by: session.userId })
     .eq("id", loanId);
 
   if (closeError) {
     throw new Error(closeError.message);
   }
 
-  return getLoanDetailById(loanId);
+  return getLoanDetailById(session, loanId);
 }
-
-

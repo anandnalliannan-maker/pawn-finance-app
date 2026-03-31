@@ -1,11 +1,22 @@
 import type { ReactNode } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { requirePageSession } from "@/lib/server/auth";
 
-export default function WorkspaceLayout({
+export default async function WorkspaceLayout({
   children,
 }: {
   children: ReactNode;
 }) {
-  return <AppShell>{children}</AppShell>;
+  const session = await requirePageSession();
+
+  return (
+    <AppShell
+      userRole={session.role}
+      userName={session.fullName}
+      companies={session.companies}
+    >
+      {children}
+    </AppShell>
+  );
 }

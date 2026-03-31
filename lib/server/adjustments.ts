@@ -1,5 +1,7 @@
 import type { CreatePaymentAdjustmentPayload, PaymentAdjustmentRecord, PaymentAdjustmentType } from "@/lib/adjustments";
 import { formatDisplayDate } from "@/lib/date-utils";
+import { canAccessCompanyId, type AppSession } from "@/lib/server/auth";
+import { postLedgerEntry } from "@/lib/server/ledger";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 type AdjustmentRow = {
@@ -15,7 +17,7 @@ type AdjustmentRow = {
   acknowledged_by: string;
   status: "posted";
   created_at: string;
-  loans: { account_number: string; companies: { name: string } | { name: string }[] | null; customers: { full_name: string } | { full_name: string }[] | null } | { account_number: string; companies: { name: string } | { name: string }[] | null; customers: { full_name: string } | { full_name: string }[] | null }[] | null;
+  loans: { id: string; account_number: string; company_id: string; companies: { name: string } | { name: string }[] | null; customers: { full_name: string } | { full_name: string }[] | null } | { id: string; account_number: string; company_id: string; companies: { name: string } | { name: string }[] | null; customers: { full_name: string } | { full_name: string }[] | null }[] | null;
   loan_payments: { payment_date: string } | { payment_date: string }[] | null;
 };
 
@@ -59,7 +61,7 @@ function mapAdjustment(row: AdjustmentRow): PaymentAdjustmentRecord {
   };
 }
 
-export async function listPaymentAdjustments() {
+export async function listPaymentAdjustments(session: AppSession) {
   const supabase = getSupabaseServerClient();
   const { data, error } = await supabase
     .from("loan_payment_adjustments")
@@ -76,17 +78,31 @@ export async function listPaymentAdjustments() {
       acknowledged_by,
       status,
       created_at,
-      loans!inner(account_number, companies!inner(name), customers!inner(full_name)),
+      loans!inner(id, account_number, company_id, companies!inner(name), customers!inner(full_name)),
       loan_payments!inner(payment_date)
     `)
     .order("created_at", { ascending: false });
 
   if (error) throw new Error(error.message);
-  return ((data ?? []) as AdjustmentRow[]).map(mapAdjustment);
+  return ((data ?? []) as AdjustmentRow[])
+    .filter((row) => {
+      const loan = asArray(row.loans)[0];
+      return loan ? canAccessCompanyId(session, loan.company_id) : false;
+    })
+    .map(mapAdjustment);
 }
 
-export async function createPaymentAdjustment(loanId: string, payload: CreatePaymentAdjustmentPayload) {
+export async function createPaymentAdjustment(session: AppSession, loanId: string, payload: CreatePaymentAdjustmentPayload) {
   const supabase = getSupabaseServerClient();
+  const { data: loan, error: loanError } = await supabase
+    .from("loans")
+    .select("id, account_number, company_id, customers!inner(full_name)")
+    .eq("id", loanId)
+    .maybeSingle();
+
+  if (loanError) throw new Error(loanError.message);
+  if (!loan || !canAccessCompanyId(session, loan.company_id as string)) throw new Error("You do not have access to this loan.");
+
   const { data, error } = await supabase
     .from("loan_payment_adjustments")
     .insert({
@@ -99,6 +115,7 @@ export async function createPaymentAdjustment(loanId: string, payload: CreatePay
       corrected_payment_upto: payload.correctedPaymentUpto,
       reason: payload.reason.trim(),
       acknowledged_by: payload.acknowledgedBy.trim(),
+      created_by: session.userId,
     })
     .select(`
       id,
@@ -113,11 +130,32 @@ export async function createPaymentAdjustment(loanId: string, payload: CreatePay
       acknowledged_by,
       status,
       created_at,
-      loans!inner(account_number, companies!inner(name), customers!inner(full_name)),
+      loans!inner(id, account_number, company_id, companies!inner(name), customers!inner(full_name)),
       loan_payments!inner(payment_date)
     `)
     .single();
 
   if (error) throw new Error(error.message);
+
+  const netEffect = payload.principalAdjustment + payload.interestAdjustment;
+  if (netEffect !== 0) {
+    await postLedgerEntry({
+      companyId: loan.company_id as string,
+      entryDate: payload.correctedPaymentUpto,
+      category: "payment_adjustment",
+      direction: netEffect >= 0 ? "incoming" : "outgoing",
+      description: `Payment adjustment posted for account ${loan.account_number as string}`,
+      reference: asArray(loan.customers)[0]?.full_name ?? "Payment adjustment",
+      amount: Math.abs(netEffect),
+      sourceType: "loan_payment_adjustment",
+      sourceId: (data as AdjustmentRow).id,
+      createdBy: session.userId,
+      metadata: {
+        principalAdjustment: payload.principalAdjustment,
+        interestAdjustment: payload.interestAdjustment,
+      },
+    });
+  }
+
   return mapAdjustment(data as AdjustmentRow);
 }

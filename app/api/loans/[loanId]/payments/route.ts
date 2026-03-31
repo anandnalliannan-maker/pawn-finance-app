@@ -1,37 +1,22 @@
 import { NextResponse } from "next/server";
 
+import type { RecordLoanPaymentPayload } from "@/lib/loans";
+import { buildAuthErrorResponse, requireApiSession } from "@/lib/server/auth";
 import { recordLoanPayment } from "@/lib/server/loans";
 
 export const runtime = "nodejs";
 
-export async function POST(
-  request: Request,
-  context: { params: Promise<{ loanId: string }> },
-) {
+export async function POST(request: Request, context: RouteContext<"/api/loans/[loanId]/payments">) {
   try {
+    const session = await requireApiSession();
     const { loanId } = await context.params;
-    const payload = (await request.json()) as {
-      paymentDate: string;
-      paymentFrom: string;
-      paymentUpto: string;
-      principalPayment: number;
-      interestPayment: number;
-      notes?: string;
-    };
+    const payload = (await request.json()) as RecordLoanPaymentPayload;
 
-    if (!payload.paymentDate || !payload.paymentFrom || !payload.paymentUpto) {
-      return NextResponse.json(
-        { error: "Payment date and interest period are required." },
-        { status: 400 },
-      );
-    }
-
-    const loan = await recordLoanPayment(loanId, payload);
-    return NextResponse.json({ loan, message: "Payment saved successfully." });
+    const loan = await recordLoanPayment(session, loanId, payload);
+    return NextResponse.json({ loan, message: "Payment recorded successfully." });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to save payment." },
-      { status: 500 },
-    );
+    const authResponse = buildAuthErrorResponse(error);
+    if (authResponse) return authResponse;
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to save payment." }, { status: 500 });
   }
 }
