@@ -1,6 +1,4 @@
-﻿export const ALL_COMPANIES = "All Companies";
-
-export const companyOptions = [
+﻿export const companyOptions = [
   {
     name: "Vishnu Bankers - Main Branch",
     code: "VBM001",
@@ -15,6 +13,6 @@ export const companyOptions = [
   },
 ] as const;
 
-export function matchesCompanyScope(company: string, selectedCompany: string) {
-  return selectedCompany === ALL_COMPANIES || company === selectedCompany;
+export function matchesCompanyFilter(company: string, companyFilter: string) {
+  return !companyFilter || company === companyFilter;
 }

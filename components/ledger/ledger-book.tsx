@@ -1,11 +1,10 @@
 ﻿"use client";
 
 import { useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { Filter, Search } from "lucide-react";
 
+import { companyOptions, matchesCompanyFilter } from "@/lib/companies";
 import { formatIsoDate, isDateWithinRange } from "@/lib/date-utils";
-import { ALL_COMPANIES, matchesCompanyScope } from "@/lib/companies";
 import { ledgerEntries, type LedgerCategory } from "@/lib/ledger";
 
 const ledgerCategories: Array<LedgerCategory | "All"> = ["All", "Incoming Payment", "Outgoing Loan", "Deposit Received", "Tea", "Snacks", "Fuel", "Salary", "Miscellaneous"];
@@ -14,10 +13,9 @@ function formatCurrency(value: number) {
   return `Rs ${value.toFixed(2)}`;
 }
 
-export function LedgerBook({ selectedCompany }: { selectedCompany: string }) {
-  const searchParams = useSearchParams();
-  const companyScope = searchParams.get("company") ?? selectedCompany ?? ALL_COMPANIES;
+export function LedgerBook() {
   const [query, setQuery] = useState("");
+  const [companyFilter, setCompanyFilter] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<LedgerCategory | "All">("All");
   const [selectedDirection, setSelectedDirection] = useState<"All" | "Incoming" | "Outgoing">("All");
   const [fromDate, setFromDate] = useState(formatIsoDate(new Date(new Date().getFullYear(), new Date().getMonth(), 1)));
@@ -25,21 +23,21 @@ export function LedgerBook({ selectedCompany }: { selectedCompany: string }) {
 
   const filteredEntries = useMemo(() => {
     return ledgerEntries.filter((entry) => {
-      const matchesCompany = matchesCompanyScope(entry.company, companyScope);
+      const matchesCompany = matchesCompanyFilter(entry.company, companyFilter);
       const matchesQuery = query ? [entry.description, entry.reference, entry.category, entry.company].join(" ").toLowerCase().includes(query.toLowerCase()) : true;
       const matchesCategory = selectedCategory === "All" ? true : entry.category === selectedCategory;
       const matchesDirection = selectedDirection === "All" ? true : entry.direction === selectedDirection;
       const matchesDateRange = isDateWithinRange(entry.date, fromDate, toDate);
       return matchesCompany && matchesQuery && matchesCategory && matchesDirection && matchesDateRange;
     });
-  }, [query, selectedCategory, companyScope, selectedDirection, fromDate, toDate]);
+  }, [query, companyFilter, selectedCategory, selectedDirection, fromDate, toDate]);
 
   return (
     <div className="space-y-6">
       <section className="app-panel rounded-[30px] p-6 sm:p-8">
         <div className="flex items-center justify-between gap-4"><div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">Ledger Book</p><h1 className="mt-2 text-3xl font-semibold text-[var(--color-ink)]">Full transaction register</h1></div><div className="rounded-2xl bg-[var(--color-panel-strong)] p-3 text-[var(--color-accent-strong)]"><Filter className="h-6 w-6" /></div></div>
         <div className="mt-6 space-y-4">
-          <div className="flex items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-white px-4 py-4 text-sm text-[var(--color-muted)]"><Search className="h-4 w-4" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by description, reference, category, or company" className="w-full bg-transparent outline-none" /></div>
+          <div className="grid gap-4 xl:grid-cols-[1fr_260px] xl:items-center"><div className="flex items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-white px-4 py-4 text-sm text-[var(--color-muted)]"><Search className="h-4 w-4" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by description, reference, category, or company" className="w-full bg-transparent outline-none" /></div><label className="block space-y-2 xl:space-y-0"><span className="sr-only">Company filter</span><select value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-4 text-sm outline-none transition focus:border-[var(--color-accent)]"><option value="">Filter by company</option>{companyOptions.map((company) => <option key={company.code} value={company.name}>{company.name}</option>)}</select></label></div>
           <div className="grid gap-4 md:grid-cols-2"><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">From date</span><input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">To date</span><input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label></div>
           <div className="flex flex-wrap gap-2">{ledgerCategories.map((category) => (<button key={category} type="button" onClick={() => setSelectedCategory(category)} className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition ${selectedCategory === category ? "bg-[var(--color-sidebar)] text-white" : "border border-[var(--color-border)] bg-white text-[var(--color-muted)]"}`}>{category}</button>))}</div>
           <div className="flex flex-wrap gap-2">{(["All", "Incoming", "Outgoing"] as const).map((direction) => (<button key={direction} type="button" onClick={() => setSelectedDirection(direction)} className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition ${selectedDirection === direction ? "bg-[var(--color-accent)] text-white" : "border border-[var(--color-border)] bg-white text-[var(--color-muted)]"}`}>{direction}</button>))}</div>

@@ -2,17 +2,15 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { Search } from "lucide-react";
 
+import { companyOptions, matchesCompanyFilter } from "@/lib/companies";
 import { isDateWithinRange } from "@/lib/date-utils";
-import { ALL_COMPANIES, matchesCompanyScope } from "@/lib/companies";
 import { getOutstandingLoanAmount, previewLoans } from "@/lib/loans";
 
 export default function SearchLoanPage() {
-  const searchParams = useSearchParams();
-  const selectedCompany = searchParams.get("company") ?? ALL_COMPANIES;
   const [query, setQuery] = useState("");
+  const [companyFilter, setCompanyFilter] = useState("");
   const [showActiveOnly, setShowActiveOnly] = useState(false);
   const [showJewelOnly, setShowJewelOnly] = useState(false);
   const [fromDate, setFromDate] = useState("");
@@ -20,7 +18,7 @@ export default function SearchLoanPage() {
 
   const filteredLoans = useMemo(() => {
     return previewLoans.filter((loan) => {
-      const matchesCompany = matchesCompanyScope(loan.company, selectedCompany);
+      const matchesCompany = matchesCompanyFilter(loan.company, companyFilter);
       const matchesQuery = query
         ? [loan.accountNumber, loan.customerName, loan.phoneNumber, loan.loanType, loan.company]
             .join(" ")
@@ -33,7 +31,7 @@ export default function SearchLoanPage() {
 
       return matchesCompany && matchesQuery && matchesActive && matchesJewel && matchesDateRange;
     });
-  }, [query, selectedCompany, showActiveOnly, showJewelOnly, fromDate, toDate]);
+  }, [query, companyFilter, showActiveOnly, showJewelOnly, fromDate, toDate]);
 
   return (
     <div className="space-y-6">
@@ -42,11 +40,18 @@ export default function SearchLoanPage() {
           Search Loan
         </p>
 
-        <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_auto_auto] xl:items-center">
+        <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_260px_auto_auto] xl:items-center">
           <div className="flex items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-white px-4 py-4 text-sm text-[var(--color-muted)]">
             <Search className="h-4 w-4" />
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name, phone number, loan type, account number, or company" className="w-full bg-transparent outline-none" />
           </div>
+          <label className="block space-y-2 xl:space-y-0">
+            <span className="sr-only">Company filter</span>
+            <select value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-4 text-sm outline-none transition focus:border-[var(--color-accent)]">
+              <option value="">Filter by company</option>
+              {companyOptions.map((company) => <option key={company.code} value={company.name}>{company.name}</option>)}
+            </select>
+          </label>
           <button type="button" onClick={() => setShowActiveOnly((current) => !current)} className={`rounded-2xl px-4 py-3 text-sm font-medium transition ${showActiveOnly ? "bg-[var(--color-sidebar)] text-white" : "border border-[var(--color-border)] bg-white text-[var(--color-ink)]"}`}>Active loans</button>
           <button type="button" onClick={() => setShowJewelOnly((current) => !current)} className={`rounded-2xl px-4 py-3 text-sm font-medium transition ${showJewelOnly ? "bg-[var(--color-sidebar)] text-white" : "border border-[var(--color-border)] bg-white text-[var(--color-ink)]"}`}>Jewel loans</button>
         </div>

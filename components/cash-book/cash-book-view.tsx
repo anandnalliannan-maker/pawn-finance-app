@@ -1,11 +1,10 @@
 ﻿"use client";
 
 import { useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { AlertCircle, Calculator, Save, Wallet } from "lucide-react";
 
+import { companyOptions, matchesCompanyFilter } from "@/lib/companies";
 import { formatDisplayDate, formatIsoDate, toDisplayDateFromIso } from "@/lib/date-utils";
-import { ALL_COMPANIES, matchesCompanyScope } from "@/lib/companies";
 import { cashBookOpeningBalances } from "@/lib/cash-book";
 import { ledgerEntries } from "@/lib/ledger";
 
@@ -18,53 +17,55 @@ function toAmount(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-export function CashBookView({ selectedCompany }: { selectedCompany: string }) {
-  const searchParams = useSearchParams();
-  const companyScope = searchParams.get("company") ?? selectedCompany ?? ALL_COMPANIES;
+export function CashBookView() {
   const [selectedDate, setSelectedDate] = useState(formatIsoDate(new Date()));
+  const [companyFilter, setCompanyFilter] = useState("");
   const displayDate = toDisplayDateFromIso(selectedDate);
 
   const scopedOpeningEntries = useMemo(
-    () => cashBookOpeningBalances.filter((entry) => entry.date === displayDate && matchesCompanyScope(entry.company, companyScope)),
-    [displayDate, companyScope],
+    () => cashBookOpeningBalances.filter((entry) => entry.date === displayDate && matchesCompanyFilter(entry.company, companyFilter)),
+    [displayDate, companyFilter],
   );
 
   const dayEntries = useMemo(() => {
     return ledgerEntries.filter(
-      (entry) => matchesCompanyScope(entry.company, companyScope) && entry.date === displayDate,
+      (entry) => matchesCompanyFilter(entry.company, companyFilter) && entry.date === displayDate,
     );
-  }, [companyScope, displayDate]);
+  }, [companyFilter, displayDate]);
 
   return (
     <CashBookBody
-      key={`${companyScope}-${selectedDate}`}
-      selectedCompany={companyScope}
+      key={`${companyFilter}-${selectedDate}`}
+      companyFilter={companyFilter}
       selectedDate={selectedDate}
       displayDate={displayDate}
       dayEntries={dayEntries}
       openingBalance={scopedOpeningEntries.reduce((sum, entry) => sum + entry.openingBalance, 0)}
-      openingNote={scopedOpeningEntries.length === 1 ? scopedOpeningEntries[0]?.openingNote ?? "No saved opening note for this date." : scopedOpeningEntries.length > 1 ? "Combined opening balances from the selected company scope." : "No saved opening note for this date."}
+      openingNote={scopedOpeningEntries.length === 1 ? scopedOpeningEntries[0]?.openingNote ?? "No saved opening note for this date." : scopedOpeningEntries.length > 1 ? "Combined opening balances for the filtered companies." : "No saved opening note for this date."}
       onDateChange={setSelectedDate}
+      onCompanyFilterChange={setCompanyFilter}
     />
   );
 }
 
 function CashBookBody({
-  selectedCompany,
+  companyFilter,
   selectedDate,
   displayDate,
   dayEntries,
   openingBalance,
   openingNote,
   onDateChange,
+  onCompanyFilterChange,
 }: {
-  selectedCompany: string;
+  companyFilter: string;
   selectedDate: string;
   displayDate: string;
   dayEntries: typeof ledgerEntries;
   openingBalance: number;
   openingNote: string;
   onDateChange: (value: string) => void;
+  onCompanyFilterChange: (value: string) => void;
 }) {
   const [openingBalanceInput, setOpeningBalanceInput] = useState(String(openingBalance));
   const [cashCountedInput, setCashCountedInput] = useState("");
@@ -129,6 +130,14 @@ function CashBookBody({
           </label>
 
           <label className="block space-y-2">
+            <span className="text-sm font-medium text-[var(--color-muted)]">Company filter</span>
+            <select value={companyFilter} onChange={(event) => onCompanyFilterChange(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]">
+              <option value="">Filter by company</option>
+              {companyOptions.map((company) => <option key={company.code} value={company.name}>{company.name}</option>)}
+            </select>
+          </label>
+
+          <label className="block space-y-2">
             <span className="text-sm font-medium text-[var(--color-muted)]">Daily opening balance</span>
             <input
               value={openingBalanceInput}
@@ -147,11 +156,11 @@ function CashBookBody({
               className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]"
             />
           </label>
+        </div>
 
-          <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-4">
-            <p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Saved opening note</p>
-            <p className="mt-2 text-sm leading-6 text-[var(--color-muted)]">{openingNote}</p>
-          </div>
+        <div className="mt-4 rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-4">
+          <p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Saved opening note</p>
+          <p className="mt-2 text-sm leading-6 text-[var(--color-muted)]">{openingNote}</p>
         </div>
       </section>
 
@@ -204,8 +213,8 @@ function CashBookBody({
             <MovementRow label="Collections and incoming funds" amount={totalIncoming} description="Cash received from loan payments and outside deposits." incoming />
             <MovementRow label="Net cash movement" amount={totalIncoming - totalOutgoing} description="Incoming minus outgoing for the selected date." highlight />
             <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-4 text-sm text-[var(--color-muted)]">
-              <p className="font-medium text-[var(--color-ink)]">Company scope</p>
-              <p className="mt-1">{selectedCompany}</p>
+              <p className="font-medium text-[var(--color-ink)]">Company filter</p>
+              <p className="mt-1">{companyFilter || "Showing all companies"}</p>
               <p className="mt-4 font-medium text-[var(--color-ink)]">Book date</p>
               <p className="mt-1">{displayDate || formatDisplayDate(new Date())}</p>
             </div>
