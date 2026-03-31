@@ -1,17 +1,41 @@
-﻿"use client";
+"use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { companyOptions, matchesCompanyFilter } from "@/lib/companies";
 import { previewDeposits } from "@/lib/deposits";
-import { previewLoans } from "@/lib/loans";
+import type { LoanRecord } from "@/lib/loans";
 
 export default function ReportsPage() {
   const [companyFilter, setCompanyFilter] = useState("");
+  const [loans, setLoans] = useState<LoanRecord[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadLoans() {
+      try {
+        const response = await fetch("/api/loans", { cache: "no-store" });
+        const result = await response.json();
+
+        if (isMounted && response.ok) {
+          setLoans((result.loans ?? []) as LoanRecord[]);
+        }
+      } catch {
+        // Reports can render with deposits even if loan summary load fails.
+      }
+    }
+
+    loadLoans();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const scopedLoans = useMemo(
-    () => previewLoans.filter((loan) => matchesCompanyFilter(loan.company, companyFilter)),
-    [companyFilter],
+    () => loans.filter((loan) => matchesCompanyFilter(loan.company, companyFilter)),
+    [companyFilter, loans],
   );
   const scopedDeposits = useMemo(
     () => previewDeposits.filter((deposit) => matchesCompanyFilter(deposit.company, companyFilter)),

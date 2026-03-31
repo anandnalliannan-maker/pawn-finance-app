@@ -17,6 +17,8 @@ type CustomerSelectRow = {
   customer_code: string;
   full_name: string;
   phone_number: string;
+  current_address: string | null;
+  permanent_address: string | null;
   area: string | null;
   aadhaar_number: string | null;
   profile_photo_path: string | null;
@@ -47,13 +49,15 @@ export async function GET() {
         customer_code,
         full_name,
         phone_number,
+        current_address,
+        permanent_address,
         area,
         aadhaar_number,
         profile_photo_path,
         companies!inner(name)
       `)
       .order("created_at", { ascending: false })
-      .limit(50);
+      .limit(250);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
@@ -64,7 +68,11 @@ export async function GET() {
       customerCode: row.customer_code,
       fullName: row.full_name,
       phoneNumber: row.phone_number,
+      currentAddress: row.current_address ?? "-",
+      permanentAddress: row.permanent_address ?? "-",
       area: row.area ?? "-",
+      aadhaarNumber: row.aadhaar_number ?? "-",
+      profilePhotoPath: row.profile_photo_path,
       company: getCompanyName(row.companies),
       status: buildCustomerStatus({
         profilePhotoPath: row.profile_photo_path,
@@ -174,6 +182,8 @@ export async function POST(request: Request) {
         customer_code,
         full_name,
         phone_number,
+        current_address,
+        permanent_address,
         area,
         aadhaar_number,
         profile_photo_path,
@@ -205,7 +215,11 @@ export async function POST(request: Request) {
           customerCode: customer.customer_code,
           fullName: customer.full_name,
           phoneNumber: customer.phone_number,
+          currentAddress: customer.current_address ?? "-",
+          permanentAddress: customer.permanent_address ?? "-",
           area: customer.area ?? "-",
+          aadhaarNumber: customer.aadhaar_number ?? "-",
+          profilePhotoPath: customer.profile_photo_path,
           company: getCompanyName(customer.companies),
           status: buildCustomerStatus({
             profilePhotoPath: customer.profile_photo_path,

@@ -1,12 +1,12 @@
-﻿"use client";
+"use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Search } from "lucide-react";
 
 import { companyOptions, matchesCompanyFilter } from "@/lib/companies";
 import { isDateWithinRange } from "@/lib/date-utils";
-import { getOutstandingLoanAmount, previewLoans } from "@/lib/loans";
+import { getOutstandingLoanAmount, type LoanRecord } from "@/lib/loans";
 
 const loanGridClass = "lg:grid-cols-[minmax(180px,1.25fr)_minmax(220px,1.55fr)_minmax(130px,0.95fr)_minmax(150px,1fr)_minmax(140px,0.95fr)_minmax(150px,0.95fr)_minmax(120px,0.8fr)]";
 
@@ -17,9 +17,44 @@ export default function SearchLoanPage() {
   const [showJewelOnly, setShowJewelOnly] = useState(false);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [loans, setLoans] = useState<LoanRecord[]>([]);
+  const [statusMessage, setStatusMessage] = useState("Loading loans from Supabase...");
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadLoans() {
+      try {
+        const response = await fetch("/api/loans", { cache: "no-store" });
+        const result = await response.json();
+
+        if (!isMounted) {
+          return;
+        }
+
+        if (!response.ok) {
+          setStatusMessage(result.error ?? "Unable to load loans.");
+          return;
+        }
+
+        setLoans((result.loans ?? []) as LoanRecord[]);
+        setStatusMessage("Search is reading live loan data from Supabase.");
+      } catch {
+        if (isMounted) {
+          setStatusMessage("Unable to reach the loan API.");
+        }
+      }
+    }
+
+    loadLoans();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const filteredLoans = useMemo(() => {
-    return previewLoans.filter((loan) => {
+    return loans.filter((loan) => {
       const matchesCompany = matchesCompanyFilter(loan.company, companyFilter);
       const matchesQuery = query
         ? [loan.accountNumber, loan.customerName, loan.phoneNumber, loan.loanType, loan.company]
@@ -33,7 +68,7 @@ export default function SearchLoanPage() {
 
       return matchesCompany && matchesQuery && matchesActive && matchesJewel && matchesDateRange;
     });
-  }, [query, companyFilter, showActiveOnly, showJewelOnly, fromDate, toDate]);
+  }, [query, companyFilter, showActiveOnly, showJewelOnly, fromDate, toDate, loans]);
 
   return (
     <div className="space-y-6">
@@ -41,6 +76,7 @@ export default function SearchLoanPage() {
         <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">
           Search Loan
         </p>
+        <p className="mt-2 text-sm text-[var(--color-muted)]">{statusMessage}</p>
 
         <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(260px,1fr)_240px_auto_auto] xl:items-center">
           <div className="flex items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-white px-4 py-4 text-sm text-[var(--color-muted)]">
@@ -90,6 +126,8 @@ export default function SearchLoanPage() {
                 </div>
               </Link>
             ))}
+
+            {!filteredLoans.length ? <div className="rounded-[24px] border border-dashed border-[var(--color-border)] bg-white px-5 py-8 text-center text-sm text-[var(--color-muted)]">No loans matched the current filters.</div> : null}
           </div>
         </div>
       </section>

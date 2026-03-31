@@ -1,23 +1,15 @@
-﻿"use client";
+"use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, Paperclip, Plus, Save, Search, Sparkles, Trash2, UserRound } from "lucide-react";
-import { toDisplayDateFromIso, formatIsoDate, parseAppDate } from "@/lib/date-utils";
+
+import type { CustomerListItem } from "@/lib/customers";
+import { formatIsoDate, parseAppDate, toDisplayDateFromIso } from "@/lib/date-utils";
+import type { CreateLoanPayload, LoanRecord } from "@/lib/loans";
 import { loanSchemes } from "@/lib/schemes";
 
 type LoanCreationFormProps = {
   selectedCompany: string;
-};
-
-type CustomerRecord = {
-  id: string;
-  customerCode: string;
-  fullName: string;
-  phoneNumber: string;
-  currentAddress: string;
-  permanentAddress: string;
-  aadhaarNumber: string;
-  area: string;
 };
 
 type JewelRow = {
@@ -27,39 +19,6 @@ type JewelRow = {
   stoneWeight: string;
 };
 
-const customers: CustomerRecord[] = [
-  {
-    id: "cus_1",
-    customerCode: "102344",
-    fullName: "Priya S",
-    phoneNumber: "+91 98400 12345",
-    currentAddress: "12, Market Road, Gandhipuram",
-    permanentAddress: "12, Market Road, Gandhipuram",
-    aadhaarNumber: "4587 9987 1120",
-    area: "Gandhipuram",
-  },
-  {
-    id: "cus_2",
-    customerCode: "102198",
-    fullName: "Ramesh K",
-    phoneNumber: "+91 98940 55123",
-    currentAddress: "4, New Street, Pollachi",
-    permanentAddress: "4, New Street, Pollachi",
-    aadhaarNumber: "8876 5523 1098",
-    area: "Pollachi",
-  },
-  {
-    id: "cus_3",
-    customerCode: "102145",
-    fullName: "Meena V",
-    phoneNumber: "+91 97890 44002",
-    currentAddress: "22, Mill Road, Tiruppur",
-    permanentAddress: "22, Mill Road, Tiruppur",
-    aadhaarNumber: "7744 6622 1144",
-    area: "Tiruppur",
-  },
-];
-
 const schemes = [
   { value: "", label: "Select later", interestPercent: "" },
   ...loanSchemes.map((scheme) => ({
@@ -67,14 +26,6 @@ const schemes = [
     label: scheme.name,
     interestPercent: scheme.slabs[0]?.interestPercent ?? "",
   })),
-];
-
-const existingLoanNumbers = [
-  "2025-2026/104",
-  "2025-2026/105",
-  "2025-2026/109",
-  "2024-2025/243",
-  "2025-2026/65",
 ];
 
 function getFinancialYearPrefix(value: string) {
@@ -135,7 +86,9 @@ function getInitials(name: string) {
 }
 
 export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
-  const [searchName, setSearchName] = useState(customers[0]?.fullName ?? "");
+  const [customers, setCustomers] = useState<CustomerListItem[]>([]);
+  const [existingLoans, setExistingLoans] = useState<LoanRecord[]>([]);
+  const [searchName, setSearchName] = useState("");
   const [searchPhone, setSearchPhone] = useState("");
   const [searchCustomerCode, setSearchCustomerCode] = useState("");
   const [loanDate, setLoanDate] = useState(formatIsoDate(new Date()));
@@ -143,36 +96,87 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
   const [loanAmount, setLoanAmount] = useState("50000");
   const [scheme, setScheme] = useState("");
   const [interestPercent, setInterestPercent] = useState("1.00");
-  const [sequenceMap, setSequenceMap] = useState(() => buildHighestSequenceMap(existingLoanNumbers));
+  const [sequenceMap, setSequenceMap] = useState<Record<string, number>>({});
   const [accountNumberInput, setAccountNumberInput] = useState("");
   const [accountError, setAccountError] = useState("");
-  const [statusMessage, setStatusMessage] = useState(
-    "Loan form is ready. Save wiring and duplicate enforcement against live Supabase data will be the next backend step.",
-  );
+  const [statusMessage, setStatusMessage] = useState("Loading customer and loan data from Supabase...");
   const [accountWasEdited, setAccountWasEdited] = useState(false);
   const [jewelRows, setJewelRows] = useState<JewelRow[]>([buildJewelRow(1)]);
+  const [supportingDocuments, setSupportingDocuments] = useState<string[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadData() {
+      try {
+        const [customerResponse, loanResponse] = await Promise.all([
+          fetch("/api/customers", { cache: "no-store" }),
+          fetch("/api/loans", { cache: "no-store" }),
+        ]);
+
+        const customerResult = await customerResponse.json();
+        const loanResult = await loanResponse.json();
+
+        if (!isMounted) {
+          return;
+        }
+
+        if (!customerResponse.ok) {
+          setStatusMessage(customerResult.error ?? "Unable to load customers.");
+          return;
+        }
+
+        if (!loanResponse.ok) {
+          setStatusMessage(loanResult.error ?? "Unable to load loans.");
+          return;
+        }
+
+        const nextCustomers = (customerResult.customers ?? []) as CustomerListItem[];
+        const nextLoans = (loanResult.loans ?? []) as LoanRecord[];
+        setCustomers(nextCustomers);
+        setExistingLoans(nextLoans);
+        setSequenceMap(buildHighestSequenceMap(nextLoans.map((loan) => loan.accountNumber)));
+        setSearchName(nextCustomers[0]?.fullName ?? "");
+        setStatusMessage("Loan form is connected to Supabase. Customer lookup and loan save are live.");
+      } catch {
+        if (isMounted) {
+          setStatusMessage("Unable to reach the loan setup endpoints.");
+        }
+      }
+    }
+
+    loadData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const selectedCustomer = useMemo(() => {
-    return (
-      customers.find((customer) => {
-        const matchesName = searchName
-          ? customer.fullName.toLowerCase().includes(searchName.toLowerCase())
-          : true;
-        const matchesPhone = searchPhone
-          ? customer.phoneNumber.replace(/\s+/g, "").includes(searchPhone.replace(/\s+/g, ""))
-          : true;
-        const matchesCode = searchCustomerCode
-          ? customer.customerCode.includes(searchCustomerCode)
-          : true;
+    return customers.find((customer) => {
+      const matchesCompany = customer.company === selectedCompany;
+      const matchesName = searchName
+        ? customer.fullName.toLowerCase().includes(searchName.toLowerCase())
+        : true;
+      const matchesPhone = searchPhone
+        ? customer.phoneNumber.replace(/\s+/g, "").includes(searchPhone.replace(/\s+/g, ""))
+        : true;
+      const matchesCode = searchCustomerCode
+        ? customer.customerCode.includes(searchCustomerCode)
+        : true;
 
-        return matchesName && matchesPhone && matchesCode;
-      }) ?? customers[0]
-    );
-  }, [searchCustomerCode, searchName, searchPhone]);
+      return matchesCompany && matchesName && matchesPhone && matchesCode;
+    }) ?? null;
+  }, [customers, searchCustomerCode, searchName, searchPhone, selectedCompany]);
 
   const financialYearPrefix = getFinancialYearPrefix(loanDate);
   const generatedAccountNumber = `${financialYearPrefix}/${(sequenceMap[financialYearPrefix] ?? 0) + 1}`;
   const currentAccountNumber = accountWasEdited ? accountNumberInput : generatedAccountNumber;
+  const existingLoanNumbers = useMemo(
+    () => existingLoans.map((loan) => loan.accountNumber),
+    [existingLoans],
+  );
 
   const nextAutoSequence = useMemo(() => {
     const currentSequence = getSequenceFromAccountNumber(currentAccountNumber, financialYearPrefix) ?? 0;
@@ -218,8 +222,13 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
     }
   }
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (!selectedCustomer) {
+      setStatusMessage("Select a saved customer before creating a loan.");
+      return;
+    }
 
     if (existingLoanNumbers.includes(currentAccountNumber)) {
       const message = "Duplicate account number found. Please use a different account number.";
@@ -228,19 +237,74 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
       return;
     }
 
-    const editedSequence = getSequenceFromAccountNumber(currentAccountNumber, financialYearPrefix);
-    if (editedSequence) {
-      setSequenceMap((current) => ({
-        ...current,
-        [financialYearPrefix]: Math.max(current[financialYearPrefix] ?? 0, editedSequence),
-      }));
-    }
+    setIsSaving(true);
+    setStatusMessage("Saving loan to Supabase...");
 
-    setStatusMessage(
-      `Loan draft captured for ${selectedCustomer.fullName}. Next auto loan number will continue from ${financialYearPrefix}/${nextAutoSequence}.`,
-    );
-    setAccountWasEdited(false);
-    setAccountNumberInput("");
+    const payload: CreateLoanPayload = {
+      companyName: selectedCompany,
+      customerId: selectedCustomer.id,
+      accountNumber: currentAccountNumber,
+      loanDate,
+      loanType,
+      loanAmount: Number(loanAmount) || 0,
+      schemeName: schemes.find((item) => item.value === scheme)?.label || undefined,
+      interestPercent: Number(interestPercent) || 0,
+      supportingDocuments,
+      jewelItems:
+        loanType === "jewel_loan"
+          ? jewelRows
+              .filter((row) => row.jewelType.trim())
+              .map((row) => ({
+                jewelType: row.jewelType.trim(),
+                jewelWeight: Number(row.jewelWeight) || 0,
+                stoneWeight: Number(row.stoneWeight) || 0,
+              }))
+          : [],
+    };
+
+    try {
+      const response = await fetch("/api/loans", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setStatusMessage(result.error ?? "Unable to save loan.");
+        return;
+      }
+
+      const savedLoan = result.loan as LoanRecord | null;
+      if (savedLoan) {
+        setExistingLoans((current) => [savedLoan, ...current]);
+        const editedSequence = getSequenceFromAccountNumber(savedLoan.accountNumber, financialYearPrefix);
+        if (editedSequence) {
+          setSequenceMap((current) => ({
+            ...current,
+            [financialYearPrefix]: Math.max(current[financialYearPrefix] ?? 0, editedSequence),
+          }));
+        }
+      }
+
+      setLoanType("cash_loan");
+      setLoanAmount("50000");
+      setScheme("");
+      setInterestPercent("1.00");
+      setAccountWasEdited(false);
+      setAccountNumberInput("");
+      setAccountError("");
+      setJewelRows([buildJewelRow(1)]);
+      setSupportingDocuments([]);
+      setStatusMessage(result.message ?? "Loan saved successfully.");
+    } catch {
+      setStatusMessage("Unable to reach the loan save endpoint.");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   function addJewelRow() {
@@ -299,12 +363,12 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
               <input value={searchCustomerCode} onChange={(event) => setSearchCustomerCode(event.target.value)} placeholder="Type customer ID" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" />
             </label>
 
-            <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Matched Customer</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{selectedCustomer.fullName}</p></div>
-            <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Saved Phone</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{selectedCustomer.phoneNumber}</p></div>
-            <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Saved Customer ID</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{selectedCustomer.customerCode}</p></div>
-            <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3 md:col-span-2"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Current Address</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{selectedCustomer.currentAddress}</p></div>
-            <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3 md:col-span-2 xl:col-span-1"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Permanent Address</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{selectedCustomer.permanentAddress}</p></div>
-            <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3 md:col-span-2 xl:col-span-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Aadhaar / Area</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{selectedCustomer.aadhaarNumber}  |  {selectedCustomer.area}</p></div>
+            <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Matched Customer</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{selectedCustomer?.fullName ?? "No customer matched"}</p></div>
+            <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Saved Phone</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{selectedCustomer?.phoneNumber ?? "-"}</p></div>
+            <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Saved Customer ID</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{selectedCustomer?.customerCode ?? "-"}</p></div>
+            <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3 md:col-span-2"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Current Address</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{selectedCustomer?.currentAddress ?? "-"}</p></div>
+            <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3 md:col-span-2 xl:col-span-1"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Permanent Address</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{selectedCustomer?.permanentAddress ?? "-"}</p></div>
+            <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3 md:col-span-2 xl:col-span-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Aadhaar / Area</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{selectedCustomer ? `${selectedCustomer.aadhaarNumber ?? "-"}  |  ${selectedCustomer.area}` : "-"}</p></div>
           </div>
         </div>
       </section>
@@ -357,13 +421,14 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
 
       <section className="app-panel rounded-[30px] p-6 sm:p-8">
         <div className="flex items-center gap-3 text-[var(--color-ink)]"><Paperclip className="h-4 w-4 text-[var(--color-accent)]" /><p className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--color-accent)]">Supporting Documents</p></div>
-        <input type="file" className="mt-4 block w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm text-[var(--color-muted)]" />
+        <input type="file" multiple onChange={(event) => setSupportingDocuments(Array.from(event.target.files ?? []).map((file) => file.name))} className="mt-4 block w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm text-[var(--color-muted)]" />
+        {supportingDocuments.length ? <p className="mt-3 text-sm text-[var(--color-muted)]">{supportingDocuments.join(", ")}</p> : null}
       </section>
 
       <section className="app-panel rounded-[30px] p-6 sm:p-8">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-start gap-3 text-sm text-[var(--color-muted)]"><AlertCircle className="mt-1 h-4 w-4 text-[var(--color-accent)]" /><p className="max-w-3xl leading-7">{statusMessage}</p></div>
-          <button type="submit" className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--color-accent-strong)]"><Save className="h-4 w-4" />Save Loan  F4</button>
+          <button type="submit" disabled={isSaving} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-70"><Save className="h-4 w-4" />{isSaving ? "Saving..." : "Save Loan  F4"}</button>
         </div>
       </section>
     </form>

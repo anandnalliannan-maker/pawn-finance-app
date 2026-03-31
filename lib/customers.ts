@@ -1,9 +1,13 @@
-﻿export type CustomerListItem = {
+export type CustomerListItem = {
   id: string;
   customerCode: string;
   fullName: string;
   phoneNumber: string;
+  currentAddress?: string;
+  permanentAddress?: string;
+  aadhaarNumber?: string;
   area: string;
+  profilePhotoPath?: string | null;
   company: string;
   status: string;
 };

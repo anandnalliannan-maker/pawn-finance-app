@@ -1,11 +1,11 @@
-﻿import { notFound } from "next/navigation";
+import { notFound } from "next/navigation";
 
 import { LoanDetailView } from "@/components/loans/loan-detail-view";
-import { getLoanById } from "@/lib/loans";
+import { getLoanDetailById } from "@/lib/server/loans";
 
 export default async function LoanDetailPage(props: PageProps<"/loans/[loanId]">) {
   const { loanId } = await props.params;
-  const loan = getLoanById(loanId);
+  const loan = await getLoanDetailById(loanId);
 
   if (!loan) {
     notFound();

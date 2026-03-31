@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useMemo, useState } from "react";
@@ -27,7 +28,7 @@ import {
   type PaymentAdjustmentRecord,
   type PaymentAdjustmentType,
 } from "@/lib/adjustments";
-import { formatIsoDate, toDisplayDateFromIso, toIsoDateFromDisplay } from "@/lib/date-utils";
+import { formatIsoDate, toIsoDateFromDisplay } from "@/lib/date-utils";
 import type { LoanPaymentRecord, LoanRecord } from "@/lib/loans";
 
 type LoanDetailViewProps = { loan: LoanRecord };
@@ -84,8 +85,10 @@ function buildInitialAdjustmentDraft(payment: LoanPaymentRecord): AdjustmentDraf
 }
 
 export function LoanDetailView({ loan }: LoanDetailViewProps) {
-  const [payments, setPayments] = useState<LoanPaymentRecord[]>(loan.payments);
-  const [adjustments, setAdjustments] = useState<PaymentAdjustmentRecord[]>(() => getPaymentAdjustmentsForLoan(loan.id, loadPaymentAdjustments()));
+  const [loanState, setLoanState] = useState(loan);
+  const [adjustments, setAdjustments] = useState<PaymentAdjustmentRecord[]>(() =>
+    getPaymentAdjustmentsForLoan(loan.id, loadPaymentAdjustments()),
+  );
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showCloseLoanModal, setShowCloseLoanModal] = useState(false);
   const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
@@ -93,20 +96,27 @@ export function LoanDetailView({ loan }: LoanDetailViewProps) {
   const [paymentDraft, setPaymentDraft] = useState<PaymentDraft>(() => buildInitialDraft(loan));
   const [selectedPaymentId, setSelectedPaymentId] = useState<string | null>(null);
   const [adjustmentDraft, setAdjustmentDraft] = useState<AdjustmentDraft | null>(null);
-  const [isClosed, setIsClosed] = useState(loan.status === "Closed");
-  const [statusMessage, setStatusMessage] = useState("Loan detail view is ready. Corrections are posted as separate adjustment entries until backend save is wired.");
+  const [statusMessage, setStatusMessage] = useState(
+    "Loan detail view is connected to Supabase for payments and close-loan actions. Adjustments remain local until their backend tables are added.",
+  );
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const effectivePayments = useMemo(() => buildEffectiveLoanPayments(payments, adjustments), [adjustments, payments]);
-  const outstandingLoan = useMemo(() => getAdjustedOutstandingLoanAmount(loan.originalLoanAmount, payments, adjustments), [adjustments, loan.originalLoanAmount, payments]);
+  const effectivePayments = useMemo(
+    () => buildEffectiveLoanPayments(loanState.payments, adjustments),
+    [adjustments, loanState.payments],
+  );
+  const outstandingLoan = useMemo(
+    () => getAdjustedOutstandingLoanAmount(loanState.originalLoanAmount, loanState.payments, adjustments),
+    [adjustments, loanState.originalLoanAmount, loanState.payments],
+  );
   const totalInterestPaid = effectivePayments.reduce((total, payment) => total + payment.netInterestPayment, 0);
   const totalPrincipalPaid = effectivePayments.reduce((total, payment) => total + payment.netPrincipalPayment, 0);
   const interestCleared = isInterestPaidUptoDateFromEffectivePayments(effectivePayments);
   const canCloseLoan = outstandingLoan === 0 && interestCleared;
-  const liveStatus = isClosed ? "Closed" : "Active";
-  const selectedPayment = payments.find((payment) => payment.id === selectedPaymentId) ?? null;
+  const selectedPayment = loanState.payments.find((payment) => payment.id === selectedPaymentId) ?? null;
 
   function openPaymentModal() {
-    setPaymentDraft(buildInitialDraft({ ...loan, payments }));
+    setPaymentDraft(buildInitialDraft(loanState));
     setShowPaymentModal(true);
   }
 
@@ -115,7 +125,7 @@ export function LoanDetailView({ loan }: LoanDetailViewProps) {
   }
 
   function openAdjustmentModal(payment?: LoanPaymentRecord) {
-    const targetPayment = payment ?? payments[payments.length - 1];
+    const targetPayment = payment ?? loanState.payments[loanState.payments.length - 1];
     if (!targetPayment) {
       setStatusMessage("No payment is available yet. Record a payment before posting an adjustment.");
       return;
@@ -148,25 +158,42 @@ export function LoanDetailView({ loan }: LoanDetailViewProps) {
   function handleAdjustmentDraftChange(field: keyof AdjustmentDraft, value: string) {
     setAdjustmentDraft((current) => (current ? { ...current, [field]: value } : current));
   }
-
-  function handlePaymentSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handlePaymentSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const principalPayment = Math.min(toAmount(paymentDraft.principalPayment), outstandingLoan);
-    const interestPayment = toAmount(paymentDraft.interestPayment);
-    const newPayment: LoanPaymentRecord = {
-      id: `payment-${payments.length + 1}`,
-      paymentDate: toDisplayDateFromIso(paymentDraft.paymentDate),
-      paymentFrom: toDisplayDateFromIso(paymentDraft.paymentFrom),
-      paymentUpto: toDisplayDateFromIso(paymentDraft.paymentUpto),
-      principalPayment,
-      interestPayment,
-      notes: paymentDraft.notes.trim() || undefined,
-    };
-    setPayments((current) => [...current, newPayment]);
-    setIsClosed(false);
-    const nextOutstanding = Math.max(outstandingLoan - principalPayment, 0);
-    setStatusMessage(`Payment recorded for ${loan.customerName}. Outstanding loan is now ${formatCurrency(nextOutstanding)}.`);
-    setShowPaymentModal(false);
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch(`/api/loans/${loanState.id}/payments`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          paymentDate: paymentDraft.paymentDate,
+          paymentFrom: paymentDraft.paymentFrom,
+          paymentUpto: paymentDraft.paymentUpto,
+          principalPayment: Math.min(toAmount(paymentDraft.principalPayment), outstandingLoan),
+          interestPayment: toAmount(paymentDraft.interestPayment),
+          notes: paymentDraft.notes,
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        setStatusMessage(result.error ?? "Unable to save payment.");
+        return;
+      }
+
+      if (result.loan) {
+        setLoanState(result.loan as LoanRecord);
+      }
+      setStatusMessage(result.message ?? `Payment recorded for ${loanState.customerName}.`);
+      setShowPaymentModal(false);
+    } catch {
+      setStatusMessage("Unable to reach the payment endpoint.");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   function handleAdjustmentSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -187,17 +214,17 @@ export function LoanDetailView({ loan }: LoanDetailViewProps) {
 
     const newAdjustment: PaymentAdjustmentRecord = {
       id: `adjustment-${adjustments.length + 1}`,
-      loanId: loan.id,
-      loanAccountNumber: loan.accountNumber,
-      company: loan.company,
-      customerName: loan.customerName,
+      loanId: loanState.id,
+      loanAccountNumber: loanState.accountNumber,
+      company: loanState.company,
+      customerName: loanState.customerName,
       originalPaymentId: selectedPayment.id,
       originalPaymentDate: selectedPayment.paymentDate,
       correctionType: adjustmentDraft.correctionType,
       principalAdjustment: toAmount(adjustmentDraft.principalAdjustment),
       interestAdjustment: toAmount(adjustmentDraft.interestAdjustment),
-      correctedPaymentFrom: toDisplayDateFromIso(adjustmentDraft.correctedPaymentFrom),
-      correctedPaymentUpto: toDisplayDateFromIso(adjustmentDraft.correctedPaymentUpto),
+      correctedPaymentFrom: adjustmentDraft.correctedPaymentFrom,
+      correctedPaymentUpto: adjustmentDraft.correctedPaymentUpto,
       reason: adjustmentDraft.reason.trim(),
       acknowledgedBy: adjustmentDraft.acknowledgedBy.trim(),
       createdAt: todayDisplayDate(),
@@ -205,14 +232,14 @@ export function LoanDetailView({ loan }: LoanDetailViewProps) {
     };
 
     const nextAllAdjustments = [...loadPaymentAdjustments(), newAdjustment];
-    const nextLoanAdjustments = getPaymentAdjustmentsForLoan(loan.id, nextAllAdjustments);
+    const nextLoanAdjustments = getPaymentAdjustmentsForLoan(loanState.id, nextAllAdjustments);
     savePaymentAdjustments(nextAllAdjustments);
     setAdjustments(nextLoanAdjustments);
     setStatusMessage(`Adjustment posted for payment dated ${selectedPayment.paymentDate}. Original entry remains preserved for audit.`);
     closeAdjustmentModal();
   }
 
-  function handleCloseLoan() {
+  async function handleCloseLoan() {
     if (!canCloseLoan) {
       setStatusMessage("Loan cannot be closed until the full principal is paid and interest is cleared up to today.");
       setShowCloseLoanModal(false);
@@ -222,9 +249,29 @@ export function LoanDetailView({ loan }: LoanDetailViewProps) {
       setStatusMessage("Staff acknowledgement is required before closing the loan.");
       return;
     }
-    setIsClosed(true);
-    setStatusMessage(`Loan ${loan.accountNumber} has been marked as closed.`);
-    setShowCloseLoanModal(false);
+
+    setIsSubmitting(true);
+    try {
+      const response = await fetch(`/api/loans/${loanState.id}/close`, {
+        method: "POST",
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        setStatusMessage(result.error ?? "Unable to close loan.");
+        return;
+      }
+
+      if (result.loan) {
+        setLoanState(result.loan as LoanRecord);
+      }
+      setStatusMessage(result.message ?? `Loan ${loanState.accountNumber} has been marked as closed.`);
+      setShowCloseLoanModal(false);
+    } catch {
+      setStatusMessage("Unable to reach the close-loan endpoint.");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -234,11 +281,11 @@ export function LoanDetailView({ loan }: LoanDetailViewProps) {
           <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">Loan Details</p>
-              <h1 className="mt-2 text-3xl font-semibold text-[var(--color-ink)]">{loan.accountNumber}</h1>
-              <p className="mt-2 text-sm text-[var(--color-muted)]">{loan.loanType} | {loan.company}</p>
+              <h1 className="mt-2 text-3xl font-semibold text-[var(--color-ink)]">{loanState.accountNumber}</h1>
+              <p className="mt-2 text-sm text-[var(--color-muted)]">{loanState.loanType} | {loanState.company}</p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <div className="rounded-2xl bg-[var(--color-panel-strong)] px-4 py-3 text-sm font-medium text-[var(--color-ink)]">Original loan: {formatCurrency(loan.originalLoanAmount)}</div>
+              <div className="rounded-2xl bg-[var(--color-panel-strong)] px-4 py-3 text-sm font-medium text-[var(--color-ink)]">Original loan: {formatCurrency(loanState.originalLoanAmount)}</div>
               <div className="rounded-2xl bg-[var(--color-sidebar)] px-4 py-3 text-sm font-medium text-white">Outstanding loan: {formatCurrency(outstandingLoan)}</div>
               <button type="button" onClick={openPaymentModal} className="inline-flex items-center gap-2 rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[var(--color-accent-strong)]"><CircleDollarSign className="h-4 w-4" />Make payment</button>
               <button type="button" onClick={() => openAdjustmentModal()} className="inline-flex items-center gap-2 rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-ink)] transition hover:border-[var(--color-accent)]"><ClipboardPenLine className="h-4 w-4 text-[var(--color-accent)]" />Adjustment</button>
@@ -250,37 +297,37 @@ export function LoanDetailView({ loan }: LoanDetailViewProps) {
         <section className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
           <article className="app-panel rounded-[30px] p-6 sm:p-8">
             <div className="flex items-center gap-4">
-              <div className="flex h-20 w-20 items-center justify-center rounded-[24px] bg-[var(--color-panel-strong)] text-xl font-semibold text-[var(--color-accent-strong)]">{loan.customerPhotoLabel || <UserRound className="h-8 w-8" />}</div>
+              <div className="flex h-20 w-20 items-center justify-center rounded-[24px] bg-[var(--color-panel-strong)] text-xl font-semibold text-[var(--color-accent-strong)]">{loanState.customerPhotoLabel || <UserRound className="h-8 w-8" />}</div>
               <div>
                 <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">Customer</p>
-                <h2 className="mt-2 text-2xl font-semibold text-[var(--color-ink)]">{loan.customerName}</h2>
-                <p className="mt-1 text-sm text-[var(--color-muted)]">Customer ID {loan.customerCode}</p>
+                <h2 className="mt-2 text-2xl font-semibold text-[var(--color-ink)]">{loanState.customerName}</h2>
+                <p className="mt-1 text-sm text-[var(--color-muted)]">Customer ID {loanState.customerCode}</p>
               </div>
             </div>
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              <InfoCard label="Phone no." value={loan.phoneNumber} />
-              <InfoCard label="Area" value={loan.area} />
-              <InfoCard label="Current address" value={loan.currentAddress} className="sm:col-span-2" />
-              <InfoCard label="Permanent address" value={loan.permanentAddress} className="sm:col-span-2" />
-              <InfoCard label="Aadhaar number" value={loan.aadhaarNumber} />
-              <InfoCard label="Supporting documents" value={`${loan.supportingDocumentCount} attached`} />
+              <InfoCard label="Phone no." value={loanState.phoneNumber} />
+              <InfoCard label="Area" value={loanState.area} />
+              <InfoCard label="Current address" value={loanState.currentAddress} className="sm:col-span-2" />
+              <InfoCard label="Permanent address" value={loanState.permanentAddress} className="sm:col-span-2" />
+              <InfoCard label="Aadhaar number" value={loanState.aadhaarNumber} />
+              <InfoCard label="Supporting documents" value={`${loanState.supportingDocumentCount} attached`} />
             </div>
           </article>
 
           <article className="app-panel rounded-[30px] p-6 sm:p-8">
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">Loan Snapshot</p>
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              <InfoCard label="Status" value={liveStatus} />
-              <InfoCard label="Date" value={loan.loanDate} />
-              <InfoCard label="Loan type" value={loan.loanType} />
-              <InfoCard label="Scheme" value={loan.schemeName} />
-              <InfoCard label="Interest %" value={`${loan.interestPercent.toFixed(2)}%`} />
+              <InfoCard label="Status" value={loanState.status} />
+              <InfoCard label="Date" value={loanState.loanDate} />
+              <InfoCard label="Loan type" value={loanState.loanType} />
+              <InfoCard label="Scheme" value={loanState.schemeName} />
+              <InfoCard label="Interest %" value={`${loanState.interestPercent.toFixed(2)}%`} />
               <InfoCard label="Total principal paid" value={formatCurrency(totalPrincipalPaid)} />
               <InfoCard label="Total interest paid" value={formatCurrency(totalInterestPaid)} />
               <InfoCard label="Outstanding loan" value={formatCurrency(outstandingLoan)} />
               <InfoCard label="Interest cleared upto today" value={interestCleared ? "Yes" : "No"} />
             </div>
-            {loan.jewelDetails?.length ? <div className="mt-6 overflow-x-auto rounded-[24px] border border-[var(--color-border)] bg-white"><table className="min-w-full border-collapse"><thead><tr className="bg-[var(--color-panel-strong)] text-left text-sm text-[var(--color-ink)]"><th className="px-4 py-3 font-semibold">Jewel Type</th><th className="px-4 py-3 font-semibold">Jewel wt.</th><th className="px-4 py-3 font-semibold">Stone wt.</th><th className="px-4 py-3 font-semibold">Gold wt.</th></tr></thead><tbody>{loan.jewelDetails.map((row) => (<tr key={row.id} className="border-t border-[var(--color-border)] text-sm text-[var(--color-muted)]"><td className="px-4 py-3">{row.jewelType}</td><td className="px-4 py-3">{row.jewelWeight}</td><td className="px-4 py-3">{row.stoneWeight}</td><td className="px-4 py-3">{row.goldWeight}</td></tr>))}</tbody></table></div> : null}
+            {loanState.jewelDetails?.length ? <div className="mt-6 overflow-x-auto rounded-[24px] border border-[var(--color-border)] bg-white"><table className="min-w-full border-collapse"><thead><tr className="bg-[var(--color-panel-strong)] text-left text-sm text-[var(--color-ink)]"><th className="px-4 py-3 font-semibold">Jewel Type</th><th className="px-4 py-3 font-semibold">Jewel wt.</th><th className="px-4 py-3 font-semibold">Stone wt.</th><th className="px-4 py-3 font-semibold">Gold wt.</th></tr></thead><tbody>{loanState.jewelDetails.map((row) => (<tr key={row.id} className="border-t border-[var(--color-border)] text-sm text-[var(--color-muted)]"><td className="px-4 py-3">{row.jewelType}</td><td className="px-4 py-3">{row.jewelWeight}</td><td className="px-4 py-3">{row.stoneWeight}</td><td className="px-4 py-3">{row.goldWeight}</td></tr>))}</tbody></table></div> : null}
           </article>
         </section>
 
@@ -351,11 +398,11 @@ export function LoanDetailView({ loan }: LoanDetailViewProps) {
         </section>
       </div>
 
-      {showPaymentModal ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(26,24,20,0.46)] p-4"><div className="w-full max-w-2xl rounded-[30px] border border-[var(--color-border)] bg-[var(--color-panel)] p-6 shadow-[0_32px_80px_rgba(26,24,20,0.22)] sm:p-8"><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">Record Payment</p><h2 className="mt-2 text-2xl font-semibold text-[var(--color-ink)]">{loan.accountNumber}</h2></div><button type="button" onClick={closePaymentModal} className="rounded-2xl border border-[var(--color-border)] bg-white p-3 text-[var(--color-muted)] transition hover:text-[var(--color-ink)]" aria-label="Close payment popup"><X className="h-4 w-4" /></button></div><form onSubmit={handlePaymentSubmit} className="mt-6 space-y-5"><div className="grid gap-4 md:grid-cols-2"><MetricCard icon={<FileText className="h-4 w-4 text-[var(--color-accent)]" />} label="Original loan" value={formatCurrency(loan.originalLoanAmount)} /><MetricCard icon={<HandCoins className="h-4 w-4 text-[var(--color-accent)]" />} label="Outstanding loan" value={formatCurrency(outstandingLoan)} /></div><div className="grid gap-4 md:grid-cols-2"><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Payment date</span><input type="date" value={paymentDraft.paymentDate} onChange={(event) => handleDraftChange("paymentDate", event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Principal payment</span><input value={paymentDraft.principalPayment} onChange={(event) => handleDraftChange("principalPayment", event.target.value)} placeholder="0" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Interest payment from</span><input type="date" value={paymentDraft.paymentFrom} onChange={(event) => handleDraftChange("paymentFrom", event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Interest payment upto</span><input type="date" value={paymentDraft.paymentUpto} onChange={(event) => handleDraftChange("paymentUpto", event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2 md:col-span-2"><span className="text-sm font-medium text-[var(--color-muted)]">Interest payment</span><input value={paymentDraft.interestPayment} onChange={(event) => handleDraftChange("interestPayment", event.target.value)} placeholder="0" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2 md:col-span-2"><span className="text-sm font-medium text-[var(--color-muted)]">Remarks</span><textarea value={paymentDraft.notes} onChange={(event) => handleDraftChange("notes", event.target.value)} rows={3} placeholder="Optional note for this payment" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label></div><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="inline-flex items-center gap-2 text-sm text-[var(--color-muted)]"><CalendarClock className="h-4 w-4 text-[var(--color-accent)]" />Principal payment reduces the outstanding loan immediately.</div><button type="submit" className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--color-accent-strong)]"><Save className="h-4 w-4" />Save payment</button></div></form></div></div> : null}
+      {showPaymentModal ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(26,24,20,0.46)] p-4"><div className="w-full max-w-2xl rounded-[30px] border border-[var(--color-border)] bg-[var(--color-panel)] p-6 shadow-[0_32px_80px_rgba(26,24,20,0.22)] sm:p-8"><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">Record Payment</p><h2 className="mt-2 text-2xl font-semibold text-[var(--color-ink)]">{loanState.accountNumber}</h2></div><button type="button" onClick={closePaymentModal} className="rounded-2xl border border-[var(--color-border)] bg-white p-3 text-[var(--color-muted)] transition hover:text-[var(--color-ink)]" aria-label="Close payment popup"><X className="h-4 w-4" /></button></div><form onSubmit={handlePaymentSubmit} className="mt-6 space-y-5"><div className="grid gap-4 md:grid-cols-2"><MetricCard icon={<FileText className="h-4 w-4 text-[var(--color-accent)]" />} label="Original loan" value={formatCurrency(loanState.originalLoanAmount)} /><MetricCard icon={<HandCoins className="h-4 w-4 text-[var(--color-accent)]" />} label="Outstanding loan" value={formatCurrency(outstandingLoan)} /></div><div className="grid gap-4 md:grid-cols-2"><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Payment date</span><input type="date" value={paymentDraft.paymentDate} onChange={(event) => handleDraftChange("paymentDate", event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Principal payment</span><input value={paymentDraft.principalPayment} onChange={(event) => handleDraftChange("principalPayment", event.target.value)} placeholder="0" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Interest payment from</span><input type="date" value={paymentDraft.paymentFrom} onChange={(event) => handleDraftChange("paymentFrom", event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Interest payment upto</span><input type="date" value={paymentDraft.paymentUpto} onChange={(event) => handleDraftChange("paymentUpto", event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2 md:col-span-2"><span className="text-sm font-medium text-[var(--color-muted)]">Interest payment</span><input value={paymentDraft.interestPayment} onChange={(event) => handleDraftChange("interestPayment", event.target.value)} placeholder="0" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2 md:col-span-2"><span className="text-sm font-medium text-[var(--color-muted)]">Remarks</span><textarea value={paymentDraft.notes} onChange={(event) => handleDraftChange("notes", event.target.value)} rows={3} placeholder="Optional note for this payment" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label></div><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="inline-flex items-center gap-2 text-sm text-[var(--color-muted)]"><CalendarClock className="h-4 w-4 text-[var(--color-accent)]" />Principal payment reduces the outstanding loan immediately.</div><button type="submit" disabled={isSubmitting} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-70"><Save className="h-4 w-4" />Save payment</button></div></form></div></div> : null}
 
-      {showAdjustmentModal && selectedPayment && adjustmentDraft ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(26,24,20,0.46)] p-4"><div className="w-full max-w-3xl rounded-[30px] border border-[var(--color-border)] bg-[var(--color-panel)] p-6 shadow-[0_32px_80px_rgba(26,24,20,0.22)] sm:p-8"><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">Payment Correction</p><h2 className="mt-2 text-2xl font-semibold text-[var(--color-ink)]">{loan.accountNumber}</h2><p className="mt-2 text-sm text-[var(--color-muted)]">Original payment dated {selectedPayment.paymentDate} remains preserved.</p></div><button type="button" onClick={closeAdjustmentModal} className="rounded-2xl border border-[var(--color-border)] bg-white p-3 text-[var(--color-muted)] transition hover:text-[var(--color-ink)]" aria-label="Close adjustment popup"><X className="h-4 w-4" /></button></div><form onSubmit={handleAdjustmentSubmit} className="mt-6 space-y-5"><div className="grid gap-4 md:grid-cols-2"><MetricCard icon={<FileText className="h-4 w-4 text-[var(--color-accent)]" />} label="Original principal" value={formatCurrency(selectedPayment.principalPayment)} /><MetricCard icon={<FileText className="h-4 w-4 text-[var(--color-accent)]" />} label="Original interest" value={formatCurrency(selectedPayment.interestPayment)} /></div><div className="grid gap-4 md:grid-cols-2"><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Correction type</span><select value={adjustmentDraft.correctionType} onChange={(event) => handleAdjustmentDraftChange("correctionType", event.target.value as PaymentAdjustmentType)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]"><option value="Full Reversal">Full reversal</option><option value="Partial Adjustment">Partial adjustment</option></select></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Acknowledged by</span><input value={adjustmentDraft.acknowledgedBy} onChange={(event) => handleAdjustmentDraftChange("acknowledgedBy", event.target.value)} placeholder="Staff / Admin name" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Principal adjustment</span><input value={adjustmentDraft.principalAdjustment} onChange={(event) => handleAdjustmentDraftChange("principalAdjustment", event.target.value)} placeholder="Use negative values for reversal" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Interest adjustment</span><input value={adjustmentDraft.interestAdjustment} onChange={(event) => handleAdjustmentDraftChange("interestAdjustment", event.target.value)} placeholder="Use negative values for reversal" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Corrected interest from</span><input type="date" value={adjustmentDraft.correctedPaymentFrom} onChange={(event) => handleAdjustmentDraftChange("correctedPaymentFrom", event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Corrected interest upto</span><input type="date" value={adjustmentDraft.correctedPaymentUpto} onChange={(event) => handleAdjustmentDraftChange("correctedPaymentUpto", event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2 md:col-span-2"><span className="text-sm font-medium text-[var(--color-muted)]">Reason</span><textarea value={adjustmentDraft.reason} onChange={(event) => handleAdjustmentDraftChange("reason", event.target.value)} rows={4} placeholder="Mandatory reason for reversal or correction" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label></div><div className="rounded-[24px] border border-[var(--color-border)] bg-white p-4 text-sm text-[var(--color-muted)]"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-4 w-4 text-[var(--color-accent)]" /><p>The original payment entry will not be edited. This action posts a linked correction entry and the loan balances are recalculated from the net effect.</p></div></div><div className="flex justify-end"><button type="submit" className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--color-accent-strong)]"><Save className="h-4 w-4" />Post adjustment</button></div></form></div></div> : null}
+      {showAdjustmentModal && selectedPayment && adjustmentDraft ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(26,24,20,0.46)] p-4"><div className="w-full max-w-3xl rounded-[30px] border border-[var(--color-border)] bg-[var(--color-panel)] p-6 shadow-[0_32px_80px_rgba(26,24,20,0.22)] sm:p-8"><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">Payment Correction</p><h2 className="mt-2 text-2xl font-semibold text-[var(--color-ink)]">{loanState.accountNumber}</h2><p className="mt-2 text-sm text-[var(--color-muted)]">Original payment dated {selectedPayment.paymentDate} remains preserved.</p></div><button type="button" onClick={closeAdjustmentModal} className="rounded-2xl border border-[var(--color-border)] bg-white p-3 text-[var(--color-muted)] transition hover:text-[var(--color-ink)]" aria-label="Close adjustment popup"><X className="h-4 w-4" /></button></div><form onSubmit={handleAdjustmentSubmit} className="mt-6 space-y-5"><div className="grid gap-4 md:grid-cols-2"><MetricCard icon={<FileText className="h-4 w-4 text-[var(--color-accent)]" />} label="Original principal" value={formatCurrency(selectedPayment.principalPayment)} /><MetricCard icon={<FileText className="h-4 w-4 text-[var(--color-accent)]" />} label="Original interest" value={formatCurrency(selectedPayment.interestPayment)} /></div><div className="grid gap-4 md:grid-cols-2"><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Correction type</span><select value={adjustmentDraft.correctionType} onChange={(event) => handleAdjustmentDraftChange("correctionType", event.target.value as PaymentAdjustmentType)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]"><option value="Full Reversal">Full reversal</option><option value="Partial Adjustment">Partial adjustment</option></select></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Acknowledged by</span><input value={adjustmentDraft.acknowledgedBy} onChange={(event) => handleAdjustmentDraftChange("acknowledgedBy", event.target.value)} placeholder="Staff / Admin name" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Principal adjustment</span><input value={adjustmentDraft.principalAdjustment} onChange={(event) => handleAdjustmentDraftChange("principalAdjustment", event.target.value)} placeholder="Use negative values for reversal" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Interest adjustment</span><input value={adjustmentDraft.interestAdjustment} onChange={(event) => handleAdjustmentDraftChange("interestAdjustment", event.target.value)} placeholder="Use negative values for reversal" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Corrected interest from</span><input type="date" value={adjustmentDraft.correctedPaymentFrom} onChange={(event) => handleAdjustmentDraftChange("correctedPaymentFrom", event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Corrected interest upto</span><input type="date" value={adjustmentDraft.correctedPaymentUpto} onChange={(event) => handleAdjustmentDraftChange("correctedPaymentUpto", event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2 md:col-span-2"><span className="text-sm font-medium text-[var(--color-muted)]">Reason</span><textarea value={adjustmentDraft.reason} onChange={(event) => handleAdjustmentDraftChange("reason", event.target.value)} rows={4} placeholder="Mandatory reason for reversal or correction" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label></div><div className="rounded-[24px] border border-[var(--color-border)] bg-white p-4 text-sm text-[var(--color-muted)]"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-4 w-4 text-[var(--color-accent)]" /><p>The original payment entry will not be edited. This action posts a linked correction entry and the loan balances are recalculated from the net effect.</p></div></div><div className="flex justify-end"><button type="submit" className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--color-accent-strong)]"><Save className="h-4 w-4" />Post adjustment</button></div></form></div></div> : null}
 
-      {showCloseLoanModal ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(26,24,20,0.46)] p-4"><div className="w-full max-w-xl rounded-[30px] border border-[var(--color-border)] bg-[var(--color-panel)] p-6 shadow-[0_32px_80px_rgba(26,24,20,0.22)] sm:p-8"><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">Close Loan</p><h2 className="mt-2 text-2xl font-semibold text-[var(--color-ink)]">{loan.accountNumber}</h2></div><button type="button" onClick={closeCloseLoanModal} className="rounded-2xl border border-[var(--color-border)] bg-white p-3 text-[var(--color-muted)] transition hover:text-[var(--color-ink)]" aria-label="Close loan popup"><X className="h-4 w-4" /></button></div><div className="mt-6 grid gap-4 sm:grid-cols-2"><MetricCard icon={<HandCoins className="h-4 w-4 text-[var(--color-accent)]" />} label="Outstanding loan" value={formatCurrency(outstandingLoan)} /><MetricCard icon={<CheckCircle2 className="h-4 w-4 text-[var(--color-accent)]" />} label="Interest cleared upto today" value={interestCleared ? "Yes" : "No"} /></div><div className="mt-6 rounded-[24px] border border-[var(--color-border)] bg-white p-4 text-sm text-[var(--color-muted)]"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-4 w-4 text-[var(--color-accent)]" /><p>Loan closure is allowed only when the full principal amount is paid and interest is cleared up to today.</p></div></div><label className="mt-5 flex items-start gap-3 rounded-[24px] border border-[var(--color-border)] bg-white p-4 text-sm text-[var(--color-ink)]"><input type="checkbox" checked={closeAcknowledged} onChange={(event) => setCloseAcknowledged(event.target.checked)} className="mt-1 h-4 w-4 rounded border-[var(--color-border)]" /><span>I confirm that the full principal amount and upto date interest have been collected and verified.</span></label><div className="mt-6 flex justify-end"><button type="button" onClick={handleCloseLoan} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--color-accent-strong)]"><CheckCircle2 className="h-4 w-4" />Confirm close</button></div></div></div> : null}
+      {showCloseLoanModal ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(26,24,20,0.46)] p-4"><div className="w-full max-w-xl rounded-[30px] border border-[var(--color-border)] bg-[var(--color-panel)] p-6 shadow-[0_32px_80px_rgba(26,24,20,0.22)] sm:p-8"><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">Close Loan</p><h2 className="mt-2 text-2xl font-semibold text-[var(--color-ink)]">{loanState.accountNumber}</h2></div><button type="button" onClick={closeCloseLoanModal} className="rounded-2xl border border-[var(--color-border)] bg-white p-3 text-[var(--color-muted)] transition hover:text-[var(--color-ink)]" aria-label="Close loan popup"><X className="h-4 w-4" /></button></div><div className="mt-6 grid gap-4 sm:grid-cols-2"><MetricCard icon={<HandCoins className="h-4 w-4 text-[var(--color-accent)]" />} label="Outstanding loan" value={formatCurrency(outstandingLoan)} /><MetricCard icon={<CheckCircle2 className="h-4 w-4 text-[var(--color-accent)]" />} label="Interest cleared upto today" value={interestCleared ? "Yes" : "No"} /></div><div className="mt-6 rounded-[24px] border border-[var(--color-border)] bg-white p-4 text-sm text-[var(--color-muted)]"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-4 w-4 text-[var(--color-accent)]" /><p>Loan closure is allowed only when the full principal amount is paid and interest is cleared up to today.</p></div></div><label className="mt-5 flex items-start gap-3 rounded-[24px] border border-[var(--color-border)] bg-white p-4 text-sm text-[var(--color-ink)]"><input type="checkbox" checked={closeAcknowledged} onChange={(event) => setCloseAcknowledged(event.target.checked)} className="mt-1 h-4 w-4 rounded border-[var(--color-border)]" /><span>I confirm that the full principal amount and upto date interest have been collected and verified.</span></label><div className="mt-6 flex justify-end"><button type="button" disabled={isSubmitting} onClick={handleCloseLoan} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-70"><CheckCircle2 className="h-4 w-4" />Confirm close</button></div></div></div> : null}
     </>
   );
 }
@@ -371,5 +418,3 @@ function MetricCard({ icon, label, value }: { icon: import("react").ReactNode; l
 function Cell({ label, value, subValue, strong = false }: { label: string; value: string; subValue?: string; strong?: boolean }) {
   return <div className="min-w-0"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)] lg:hidden">{label}</p><p className={strong ? "text-sm font-semibold leading-7 text-[var(--color-ink)]" : "text-sm leading-7 text-[var(--color-muted)]"}>{value}</p>{subValue ? <p className="mt-1 text-xs text-[var(--color-muted)]">{subValue}</p> : null}</div>;
 }
-
-
