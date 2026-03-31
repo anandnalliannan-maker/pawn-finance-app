@@ -170,8 +170,9 @@ export function DepositDetailView({ deposit }: DepositDetailViewProps) {
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
               <InfoCard label="Depositer name" value={deposit.depositorName} />
               <InfoCard label="Phone no." value={deposit.phoneNumber} />
-              <InfoCard label="Address" value={deposit.address} className="sm:col-span-2" />
+              <InfoCard label="Company" value={deposit.company} />
               <InfoCard label="Reference" value={deposit.reference} />
+              <InfoCard label="Address" value={deposit.address} className="sm:col-span-2" />
               <InfoCard label="Attachments" value={`${deposit.attachmentCount} attached`} />
             </div>
           </article>

@@ -13,7 +13,7 @@ export default function SearchDepositPage() {
   const filteredDeposits = useMemo(() => {
     return previewDeposits.filter((deposit) => {
       const matchesQuery = query
-        ? [deposit.depositorName, deposit.phoneNumber, deposit.depositorCode]
+        ? [deposit.depositorName, deposit.phoneNumber, deposit.depositorCode, deposit.company]
             .join(" ")
             .toLowerCase()
             .includes(query.toLowerCase())
@@ -37,7 +37,7 @@ export default function SearchDepositPage() {
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search by depositer name, phone number, or depositer ID"
+              placeholder="Search by depositer name, phone number, depositer ID, or company"
               className="w-full bg-transparent outline-none"
             />
           </div>
@@ -58,9 +58,10 @@ export default function SearchDepositPage() {
 
       <section className="app-panel rounded-[30px] p-6 sm:p-8">
         <div className="grid gap-3">
-          <div className="hidden rounded-[24px] bg-[var(--color-panel-strong)] px-5 py-4 text-sm font-semibold text-[var(--color-ink)] lg:grid lg:grid-cols-[0.24fr_0.2fr_0.18fr_0.18fr_0.2fr] lg:items-center">
+          <div className="hidden rounded-[24px] bg-[var(--color-panel-strong)] px-5 py-4 text-sm font-semibold text-[var(--color-ink)] lg:grid lg:grid-cols-[0.2fr_0.18fr_0.22fr_0.16fr_0.1fr_0.14fr] lg:items-center">
             <span>Name</span>
             <span>Phone no.</span>
+            <span>Company</span>
             <span>Deposit amount</span>
             <span>Interest %</span>
             <span>Status</span>
@@ -72,7 +73,7 @@ export default function SearchDepositPage() {
               href={`/deposits/${deposit.id}?company=${encodeURIComponent(deposit.company)}`}
               className="rounded-[24px] border border-[var(--color-border)] bg-white px-5 py-4 transition hover:-translate-y-0.5 hover:border-[var(--color-accent)]"
             >
-              <div className="grid gap-3 lg:grid-cols-[0.24fr_0.2fr_0.18fr_0.18fr_0.2fr] lg:items-center">
+              <div className="grid gap-3 lg:grid-cols-[0.2fr_0.18fr_0.22fr_0.16fr_0.1fr_0.14fr] lg:items-center">
                 <div>
                   <p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)] lg:hidden">Name</p>
                   <p className="text-sm font-semibold text-[var(--color-ink)]">{deposit.depositorName}</p>
@@ -81,6 +82,10 @@ export default function SearchDepositPage() {
                 <div>
                   <p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)] lg:hidden">Phone no.</p>
                   <p className="text-sm text-[var(--color-muted)]">{deposit.phoneNumber}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)] lg:hidden">Company</p>
+                  <p className="text-sm text-[var(--color-muted)]">{deposit.company}</p>
                 </div>
                 <div>
                   <p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)] lg:hidden">Deposit amount</p>
