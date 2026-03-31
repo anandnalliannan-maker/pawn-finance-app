@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   CalendarClock,
@@ -22,9 +22,6 @@ import {
   getAdjustedOutstandingLoanAmount,
   getPaymentAdjustmentsForLoan,
   isInterestPaidUptoDateFromEffectivePayments,
-  loadPaymentAdjustments,
-  savePaymentAdjustments,
-  todayDisplayDate,
   type PaymentAdjustmentRecord,
   type PaymentAdjustmentType,
 } from "@/lib/adjustments";
@@ -86,9 +83,7 @@ function buildInitialAdjustmentDraft(payment: LoanPaymentRecord): AdjustmentDraf
 
 export function LoanDetailView({ loan }: LoanDetailViewProps) {
   const [loanState, setLoanState] = useState(loan);
-  const [adjustments, setAdjustments] = useState<PaymentAdjustmentRecord[]>(() =>
-    getPaymentAdjustmentsForLoan(loan.id, loadPaymentAdjustments()),
-  );
+  const [adjustments, setAdjustments] = useState<PaymentAdjustmentRecord[]>([]);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showCloseLoanModal, setShowCloseLoanModal] = useState(false);
   const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
@@ -97,7 +92,7 @@ export function LoanDetailView({ loan }: LoanDetailViewProps) {
   const [selectedPaymentId, setSelectedPaymentId] = useState<string | null>(null);
   const [adjustmentDraft, setAdjustmentDraft] = useState<AdjustmentDraft | null>(null);
   const [statusMessage, setStatusMessage] = useState(
-    "Loan detail view is connected to Supabase for payments and close-loan actions. Adjustments remain local until their backend tables are added.",
+    "Loan detail view is connected to Supabase for payments, adjustments, and close-loan actions.",
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -114,6 +109,33 @@ export function LoanDetailView({ loan }: LoanDetailViewProps) {
   const interestCleared = isInterestPaidUptoDateFromEffectivePayments(effectivePayments);
   const canCloseLoan = outstandingLoan === 0 && interestCleared;
   const selectedPayment = loanState.payments.find((payment) => payment.id === selectedPaymentId) ?? null;
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadAdjustments() {
+      try {
+        const response = await fetch("/api/adjustments", { cache: "no-store" });
+        const result = await response.json();
+        if (!isMounted) {
+          return;
+        }
+        if (!response.ok) {
+          setStatusMessage(result.error ?? "Unable to load adjustments.");
+          return;
+        }
+        setAdjustments(getPaymentAdjustmentsForLoan(loan.id, (result.adjustments ?? []) as PaymentAdjustmentRecord[]));
+      } catch {
+        if (isMounted) {
+          setStatusMessage("Unable to reach the adjustments API.");
+        }
+      }
+    }
+
+    loadAdjustments();
+    return () => {
+      isMounted = false;
+    };
+  }, [loan.id]);
 
   function openPaymentModal() {
     setPaymentDraft(buildInitialDraft(loanState));
@@ -212,31 +234,35 @@ export function LoanDetailView({ loan }: LoanDetailViewProps) {
       return;
     }
 
-    const newAdjustment: PaymentAdjustmentRecord = {
-      id: `adjustment-${adjustments.length + 1}`,
-      loanId: loanState.id,
-      loanAccountNumber: loanState.accountNumber,
-      company: loanState.company,
-      customerName: loanState.customerName,
-      originalPaymentId: selectedPayment.id,
-      originalPaymentDate: selectedPayment.paymentDate,
-      correctionType: adjustmentDraft.correctionType,
-      principalAdjustment: toAmount(adjustmentDraft.principalAdjustment),
-      interestAdjustment: toAmount(adjustmentDraft.interestAdjustment),
-      correctedPaymentFrom: adjustmentDraft.correctedPaymentFrom,
-      correctedPaymentUpto: adjustmentDraft.correctedPaymentUpto,
-      reason: adjustmentDraft.reason.trim(),
-      acknowledgedBy: adjustmentDraft.acknowledgedBy.trim(),
-      createdAt: todayDisplayDate(),
-      status: "Posted",
-    };
-
-    const nextAllAdjustments = [...loadPaymentAdjustments(), newAdjustment];
-    const nextLoanAdjustments = getPaymentAdjustmentsForLoan(loanState.id, nextAllAdjustments);
-    savePaymentAdjustments(nextAllAdjustments);
-    setAdjustments(nextLoanAdjustments);
-    setStatusMessage(`Adjustment posted for payment dated ${selectedPayment.paymentDate}. Original entry remains preserved for audit.`);
-    closeAdjustmentModal();
+    void (async () => {
+      try {
+        const response = await fetch("/api/adjustments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            loanId: loanState.id,
+            originalPaymentId: selectedPayment.id,
+            correctionType: adjustmentDraft.correctionType,
+            principalAdjustment: toAmount(adjustmentDraft.principalAdjustment),
+            interestAdjustment: toAmount(adjustmentDraft.interestAdjustment),
+            correctedPaymentFrom: adjustmentDraft.correctedPaymentFrom,
+            correctedPaymentUpto: adjustmentDraft.correctedPaymentUpto,
+            reason: adjustmentDraft.reason.trim(),
+            acknowledgedBy: adjustmentDraft.acknowledgedBy.trim(),
+          }),
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          setStatusMessage(result.error ?? "Unable to save adjustment.");
+          return;
+        }
+        setAdjustments((current) => [...current, result.adjustment as PaymentAdjustmentRecord]);
+        setStatusMessage(`Adjustment posted for payment dated ${selectedPayment.paymentDate}. Original entry remains preserved for audit.`);
+        closeAdjustmentModal();
+      } catch {
+        setStatusMessage("Unable to reach the adjustment endpoint.");
+      }
+    })();
   }
 
   async function handleCloseLoan() {
@@ -418,3 +444,7 @@ function MetricCard({ icon, label, value }: { icon: import("react").ReactNode; l
 function Cell({ label, value, subValue, strong = false }: { label: string; value: string; subValue?: string; strong?: boolean }) {
   return <div className="min-w-0"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)] lg:hidden">{label}</p><p className={strong ? "text-sm font-semibold leading-7 text-[var(--color-ink)]" : "text-sm leading-7 text-[var(--color-muted)]"}>{value}</p>{subValue ? <p className="mt-1 text-xs text-[var(--color-muted)]">{subValue}</p> : null}</div>;
 }
+
+
+
+

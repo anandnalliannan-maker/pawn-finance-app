@@ -6,7 +6,7 @@ import { AlertCircle, Paperclip, Plus, Save, Search, Sparkles, Trash2, UserRound
 import type { CustomerListItem } from "@/lib/customers";
 import { formatIsoDate, parseAppDate, toDisplayDateFromIso } from "@/lib/date-utils";
 import type { CreateLoanPayload, LoanRecord } from "@/lib/loans";
-import { loanSchemes } from "@/lib/schemes";
+import type { LoanScheme } from "@/lib/schemes";
 
 type LoanCreationFormProps = {
   selectedCompany: string;
@@ -19,14 +19,6 @@ type JewelRow = {
   stoneWeight: string;
 };
 
-const schemes = [
-  { value: "", label: "Select later", interestPercent: "" },
-  ...loanSchemes.map((scheme) => ({
-    value: scheme.id,
-    label: scheme.name,
-    interestPercent: scheme.slabs[0]?.interestPercent ?? "",
-  })),
-];
 
 function getFinancialYearPrefix(value: string) {
   const date = parseAppDate(value);
@@ -97,6 +89,7 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
   const [scheme, setScheme] = useState("");
   const [interestPercent, setInterestPercent] = useState("1.00");
   const [sequenceMap, setSequenceMap] = useState<Record<string, number>>({});
+  const [availableSchemes, setAvailableSchemes] = useState<LoanScheme[]>([]);
   const [accountNumberInput, setAccountNumberInput] = useState("");
   const [accountError, setAccountError] = useState("");
   const [statusMessage, setStatusMessage] = useState("Loading customer and loan data from Supabase...");
@@ -110,13 +103,15 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
 
     async function loadData() {
       try {
-        const [customerResponse, loanResponse] = await Promise.all([
+        const [customerResponse, loanResponse, schemeResponse] = await Promise.all([
           fetch("/api/customers", { cache: "no-store" }),
           fetch("/api/loans", { cache: "no-store" }),
+          fetch("/api/schemes", { cache: "no-store" }),
         ]);
 
         const customerResult = await customerResponse.json();
         const loanResult = await loanResponse.json();
+        const schemeResult = await schemeResponse.json();
 
         if (!isMounted) {
           return;
@@ -132,13 +127,20 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
           return;
         }
 
+        if (!schemeResponse.ok) {
+          setStatusMessage(schemeResult.error ?? "Unable to load schemes.");
+          return;
+        }
+
         const nextCustomers = (customerResult.customers ?? []) as CustomerListItem[];
         const nextLoans = (loanResult.loans ?? []) as LoanRecord[];
+        const nextSchemes = (schemeResult.schemes ?? []) as LoanScheme[];
         setCustomers(nextCustomers);
         setExistingLoans(nextLoans);
+        setAvailableSchemes(nextSchemes.filter((item) => item.company === selectedCompany));
         setSequenceMap(buildHighestSequenceMap(nextLoans.map((loan) => loan.accountNumber)));
         setSearchName(nextCustomers[0]?.fullName ?? "");
-        setStatusMessage("Loan form is connected to Supabase. Customer lookup and loan save are live.");
+        setStatusMessage("Loan form is connected to Supabase. Customer lookup, scheme lookup, and loan save are live.");
       } catch {
         if (isMounted) {
           setStatusMessage("Unable to reach the loan setup endpoints.");
@@ -151,7 +153,7 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [selectedCompany]);
 
   const selectedCustomer = useMemo(() => {
     return customers.find((customer) => {
@@ -216,9 +218,10 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
 
   function handleSchemeChange(value: string) {
     setScheme(value);
-    const selectedScheme = schemes.find((item) => item.value === value);
-    if (selectedScheme?.interestPercent) {
-      setInterestPercent(selectedScheme.interestPercent);
+    const selectedScheme = availableSchemes.find((item) => item.id === value);
+    const firstSlabRate = selectedScheme?.slabs[0]?.interestPercent;
+    if (firstSlabRate) {
+      setInterestPercent(firstSlabRate);
     }
   }
 
@@ -247,7 +250,7 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
       loanDate,
       loanType,
       loanAmount: Number(loanAmount) || 0,
-      schemeName: schemes.find((item) => item.value === scheme)?.label || undefined,
+      schemeName: availableSchemes.find((item) => item.id === scheme)?.name || undefined,
       interestPercent: Number(interestPercent) || 0,
       supportingDocuments,
       jewelItems:
@@ -399,7 +402,7 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
 
           <label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Company</span><input value={selectedCompany} readOnly className="w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-page)] px-4 py-3 text-[var(--color-muted)]" /></label>
           <label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Loan Amount</span><input value={loanAmount} onChange={(event) => setLoanAmount(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label>
-          <label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Scheme</span><select value={scheme} onChange={(event) => handleSchemeChange(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]">{schemes.map((item) => (<option key={item.label} value={item.value}>{item.label}</option>))}</select></label>
+          <label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Scheme</span><select value={scheme} onChange={(event) => handleSchemeChange(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]"><option value="">Select later</option>{availableSchemes.map((item) => (<option key={item.id} value={item.id}>{item.name}</option>))}</select></label>
           <label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Interest %</span><input value={interestPercent} onChange={(event) => setInterestPercent(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label>
           <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Interest per month</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">Rs {monthlyInterest.toFixed(2)}</p></div>
           <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Interest per year</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">Rs {yearlyInterest.toFixed(2)}</p></div>
@@ -434,3 +437,5 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
     </form>
   );
 }
+
+

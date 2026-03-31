@@ -1,12 +1,12 @@
-﻿"use client";
+"use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Search } from "lucide-react";
 
 import { companyOptions, matchesCompanyFilter } from "@/lib/companies";
 import { isDateWithinRange } from "@/lib/date-utils";
-import { getOutstandingDepositAmount, previewDeposits } from "@/lib/deposits";
+import { getOutstandingDepositAmount, type DepositRecord } from "@/lib/deposits";
 
 const depositGridClass = "lg:grid-cols-[minmax(180px,1.15fr)_minmax(130px,0.85fr)_minmax(220px,1.35fr)_minmax(170px,1fr)_minmax(160px,0.95fr)_minmax(120px,0.75fr)_minmax(130px,0.75fr)]";
 
@@ -16,67 +16,51 @@ export default function SearchDepositPage() {
   const [showActiveOnly, setShowActiveOnly] = useState(false);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [deposits, setDeposits] = useState<DepositRecord[]>([]);
+  const [statusMessage, setStatusMessage] = useState("Loading deposits from Supabase...");
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadDeposits() {
+      try {
+        const response = await fetch("/api/deposits", { cache: "no-store" });
+        const result = await response.json();
+        if (!isMounted) return;
+        if (!response.ok) {
+          setStatusMessage(result.error ?? "Unable to load deposits.");
+          return;
+        }
+        setDeposits((result.deposits ?? []) as DepositRecord[]);
+        setStatusMessage("Search is reading live deposit data from Supabase.");
+      } catch {
+        if (isMounted) setStatusMessage("Unable to reach the deposits API.");
+      }
+    }
+    loadDeposits();
+    return () => { isMounted = false; };
+  }, []);
 
   const filteredDeposits = useMemo(() => {
-    return previewDeposits.filter((deposit) => {
+    return deposits.filter((deposit) => {
       const matchesCompany = matchesCompanyFilter(deposit.company, companyFilter);
-      const matchesQuery = query
-        ? [deposit.depositorName, deposit.phoneNumber, deposit.depositorCode, deposit.company]
-            .join(" ")
-            .toLowerCase()
-            .includes(query.toLowerCase())
-        : true;
+      const matchesQuery = query ? [deposit.depositorName, deposit.phoneNumber, deposit.depositorCode, deposit.company].join(" ").toLowerCase().includes(query.toLowerCase()) : true;
       const matchesActive = showActiveOnly ? deposit.status === "Active" : true;
       const matchesDateRange = isDateWithinRange(deposit.depositDate, fromDate, toDate);
-
       return matchesCompany && matchesQuery && matchesActive && matchesDateRange;
     });
-  }, [query, companyFilter, showActiveOnly, fromDate, toDate]);
+  }, [companyFilter, deposits, fromDate, query, showActiveOnly, toDate]);
 
   return (
     <div className="space-y-6">
       <section className="app-panel rounded-[30px] p-6 sm:p-8">
         <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">Search Deposit</p>
-
-        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(260px,1fr)_240px_auto] xl:items-center">
-          <div className="flex items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-white px-4 py-4 text-sm text-[var(--color-muted)]"><Search className="h-4 w-4" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by depositer name, phone number, depositer ID, or company" className="w-full bg-transparent outline-none" /></div>
-          <label className="block space-y-2 xl:space-y-0"><span className="sr-only">Company filter</span><select value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-4 text-sm outline-none transition focus:border-[var(--color-accent)]"><option value="">Filter by company</option>{companyOptions.map((company) => <option key={company.code} value={company.name}>{company.name}</option>)}</select></label>
-          <button type="button" onClick={() => setShowActiveOnly((current) => !current)} className={`rounded-2xl px-4 py-3 text-sm font-medium transition ${showActiveOnly ? "bg-[var(--color-sidebar)] text-white" : "border border-[var(--color-border)] bg-white text-[var(--color-ink)]"}`}>Active deposits</button>
-        </div>
-
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">From date</span><input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label>
-          <label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">To date</span><input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label>
-        </div>
+        <p className="mt-2 text-sm text-[var(--color-muted)]">{statusMessage}</p>
+        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(260px,1fr)_240px_auto] xl:items-center"><div className="flex items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-white px-4 py-4 text-sm text-[var(--color-muted)]"><Search className="h-4 w-4" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by depositer name, phone number, depositer ID, or company" className="w-full bg-transparent outline-none" /></div><label className="block space-y-2 xl:space-y-0"><span className="sr-only">Company filter</span><select value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-4 text-sm outline-none transition focus:border-[var(--color-accent)]"><option value="">Filter by company</option>{companyOptions.map((company) => <option key={company.code} value={company.name}>{company.name}</option>)}</select></label><button type="button" onClick={() => setShowActiveOnly((current) => !current)} className={`rounded-2xl px-4 py-3 text-sm font-medium transition ${showActiveOnly ? "bg-[var(--color-sidebar)] text-white" : "border border-[var(--color-border)] bg-white text-[var(--color-ink)]"}`}>Active deposits</button></div>
+        <div className="mt-4 grid gap-4 md:grid-cols-2"><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">From date</span><input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">To date</span><input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label></div>
       </section>
 
       <section className="app-panel rounded-[30px] p-6 sm:p-8">
-        <div className="overflow-x-auto pb-2">
-          <div className="grid min-w-[1240px] gap-3">
-            <div className={`hidden rounded-[24px] bg-[var(--color-panel-strong)] px-5 py-4 text-sm font-semibold text-[var(--color-ink)] lg:grid lg:items-center ${depositGridClass}`}>
-              <span>Name</span>
-              <span>Date</span>
-              <span>Company</span>
-              <span>Phone no.</span>
-              <span>Deposit amount</span>
-              <span>Interest %</span>
-              <span>Status</span>
-            </div>
-            {filteredDeposits.map((deposit) => (
-              <Link key={deposit.id} href={`/deposits/${deposit.id}?company=${encodeURIComponent(deposit.company)}`} className="rounded-[24px] border border-[var(--color-border)] bg-white px-5 py-4 transition hover:-translate-y-0.5 hover:border-[var(--color-accent)]">
-                <div className={`grid gap-3 lg:items-center ${depositGridClass}`}>
-                  <Cell label="Name" value={deposit.depositorName} subValue={deposit.depositorCode} strong />
-                  <Cell label="Date" value={deposit.depositDate} />
-                  <Cell label="Company" value={deposit.company} />
-                  <Cell label="Phone no." value={deposit.phoneNumber} />
-                  <Cell label="Deposit amount" value={`Rs ${getOutstandingDepositAmount(deposit).toFixed(2)}`} />
-                  <Cell label="Interest %" value={`${deposit.interestPercent.toFixed(2)}%`} />
-                  <div><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)] lg:hidden">Status</p><span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium uppercase tracking-[0.14em] ${deposit.status === "Active" ? "bg-emerald-100 text-emerald-800" : "bg-stone-200 text-stone-800"}`}>{deposit.status}</span></div>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </div>
+        <div className="overflow-x-auto pb-2"><div className="grid min-w-[1240px] gap-3"><div className={`hidden rounded-[24px] bg-[var(--color-panel-strong)] px-5 py-4 text-sm font-semibold text-[var(--color-ink)] lg:grid lg:items-center ${depositGridClass}`}><span>Name</span><span>Date</span><span>Company</span><span>Phone no.</span><span>Deposit amount</span><span>Interest %</span><span>Status</span></div>{filteredDeposits.map((deposit) => <Link key={deposit.id} href={`/deposits/${deposit.id}?company=${encodeURIComponent(deposit.company)}`} className="rounded-[24px] border border-[var(--color-border)] bg-white px-5 py-4 transition hover:-translate-y-0.5 hover:border-[var(--color-accent)]"><div className={`grid gap-3 lg:items-center ${depositGridClass}`}><Cell label="Name" value={deposit.depositorName} subValue={deposit.depositorCode} strong /><Cell label="Date" value={deposit.depositDate} /><Cell label="Company" value={deposit.company} /><Cell label="Phone no." value={deposit.phoneNumber} /><Cell label="Deposit amount" value={`Rs ${getOutstandingDepositAmount(deposit).toFixed(2)}`} /><Cell label="Interest %" value={`${deposit.interestPercent.toFixed(2)}%`} /><div><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)] lg:hidden">Status</p><span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium uppercase tracking-[0.14em] ${deposit.status === "Active" ? "bg-emerald-100 text-emerald-800" : "bg-stone-200 text-stone-800"}`}>{deposit.status}</span></div></div></Link>)}{!filteredDeposits.length ? <div className="rounded-[24px] border border-dashed border-[var(--color-border)] bg-white px-5 py-8 text-center text-sm text-[var(--color-muted)]">No deposits matched the current filters.</div> : null}</div></div>
       </section>
     </div>
   );

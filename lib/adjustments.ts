@@ -1,4 +1,4 @@
-﻿import { formatDisplayDate, parseAppDate } from "@/lib/date-utils";
+import { formatDisplayDate, parseAppDate } from "@/lib/date-utils";
 import type { LoanPaymentRecord } from "@/lib/loans";
 
 export type PaymentAdjustmentType = "Full Reversal" | "Partial Adjustment";
@@ -22,6 +22,17 @@ export type PaymentAdjustmentRecord = {
   status: "Posted";
 };
 
+export type CreatePaymentAdjustmentPayload = {
+  originalPaymentId: string;
+  correctionType: PaymentAdjustmentType;
+  principalAdjustment: number;
+  interestAdjustment: number;
+  correctedPaymentFrom: string;
+  correctedPaymentUpto: string;
+  reason: string;
+  acknowledgedBy: string;
+};
+
 export type EffectiveLoanPaymentRecord = LoanPaymentRecord & {
   effectivePaymentFrom: string;
   effectivePaymentUpto: string;
@@ -29,55 +40,6 @@ export type EffectiveLoanPaymentRecord = LoanPaymentRecord & {
   netInterestPayment: number;
   adjustments: PaymentAdjustmentRecord[];
 };
-
-export const previewPaymentAdjustments: PaymentAdjustmentRecord[] = [
-  {
-    id: "adj-109-1",
-    loanId: "loan-2025-2026-109",
-    loanAccountNumber: "2025-2026/109",
-    company: "Vishnu Bankers - Main Branch",
-    customerName: "Ramesh K",
-    originalPaymentId: "pay-109-1",
-    originalPaymentDate: "20-Mar-2026",
-    correctionType: "Partial Adjustment",
-    principalAdjustment: -5000,
-    interestAdjustment: 0,
-    correctedPaymentFrom: "20-Feb-2026",
-    correctedPaymentUpto: "20-Mar-2026",
-    reason: "Principal was entered higher than the cash actually received.",
-    acknowledgedBy: "Admin",
-    createdAt: "31-Mar-2026",
-    status: "Posted",
-  },
-];
-
-const STORAGE_KEY = "pawn-finance-payment-adjustments";
-
-export function loadPaymentAdjustments() {
-  if (typeof window === "undefined") {
-    return previewPaymentAdjustments;
-  }
-
-  const raw = window.localStorage.getItem(STORAGE_KEY);
-  if (!raw) {
-    return previewPaymentAdjustments;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as PaymentAdjustmentRecord[];
-    return parsed.length ? parsed : previewPaymentAdjustments;
-  } catch {
-    return previewPaymentAdjustments;
-  }
-}
-
-export function savePaymentAdjustments(adjustments: PaymentAdjustmentRecord[]) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(adjustments));
-}
 
 export function getPaymentAdjustmentsForLoan(loanId: string, adjustments: PaymentAdjustmentRecord[]) {
   return adjustments.filter((adjustment) => adjustment.loanId === loanId);

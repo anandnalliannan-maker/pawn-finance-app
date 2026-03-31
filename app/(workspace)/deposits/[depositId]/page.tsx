@@ -1,11 +1,11 @@
-﻿import { notFound } from "next/navigation";
+import { notFound } from "next/navigation";
 
 import { DepositDetailView } from "@/components/deposits/deposit-detail-view";
-import { getDepositById } from "@/lib/deposits";
+import { getDepositDetailById } from "@/lib/server/deposits";
 
 export default async function DepositDetailPage(props: PageProps<"/deposits/[depositId]">) {
   const { depositId } = await props.params;
-  const deposit = getDepositById(depositId);
+  const deposit = await getDepositDetailById(depositId);
 
   if (!deposit) {
     notFound();
