@@ -8,6 +8,8 @@ import { companyOptions, matchesCompanyFilter } from "@/lib/companies";
 import { isDateWithinRange } from "@/lib/date-utils";
 import { getOutstandingLoanAmount, previewLoans } from "@/lib/loans";
 
+const loanGridClass = "lg:grid-cols-[minmax(180px,1.25fr)_minmax(220px,1.55fr)_minmax(130px,0.95fr)_minmax(150px,1fr)_minmax(140px,0.95fr)_minmax(150px,0.95fr)_minmax(120px,0.8fr)]";
+
 export default function SearchLoanPage() {
   const [query, setQuery] = useState("");
   const [companyFilter, setCompanyFilter] = useState("");
@@ -40,7 +42,7 @@ export default function SearchLoanPage() {
           Search Loan
         </p>
 
-        <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_260px_auto_auto] xl:items-center">
+        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(260px,1fr)_240px_auto_auto] xl:items-center">
           <div className="flex items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-white px-4 py-4 text-sm text-[var(--color-muted)]">
             <Search className="h-4 w-4" />
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name, phone number, loan type, account number, or company" className="w-full bg-transparent outline-none" />
@@ -63,30 +65,32 @@ export default function SearchLoanPage() {
       </section>
 
       <section className="app-panel rounded-[30px] p-6 sm:p-8">
-        <div className="grid gap-3">
-          <div className="hidden rounded-[24px] bg-[var(--color-panel-strong)] px-5 py-4 text-sm font-semibold text-[var(--color-ink)] lg:grid lg:grid-cols-[0.18fr_0.18fr_0.14fr_0.14fr_0.14fr_0.12fr_0.1fr] lg:items-center">
-            <span>Name</span>
-            <span>Company</span>
-            <span>Date</span>
-            <span>Phone no.</span>
-            <span>Loan type</span>
-            <span>Loan amount</span>
-            <span>Status</span>
-          </div>
+        <div className="overflow-x-auto pb-2">
+          <div className="grid min-w-[1200px] gap-3">
+            <div className={`hidden rounded-[24px] bg-[var(--color-panel-strong)] px-5 py-4 text-sm font-semibold text-[var(--color-ink)] lg:grid lg:items-center ${loanGridClass}`}>
+              <span>Name</span>
+              <span>Company</span>
+              <span>Date</span>
+              <span>Phone no.</span>
+              <span>Loan type</span>
+              <span>Loan amount</span>
+              <span>Status</span>
+            </div>
 
-          {filteredLoans.map((loan) => (
-            <Link key={loan.accountNumber} href={`/loans/${loan.id}?company=${encodeURIComponent(loan.company)}`} className="rounded-[24px] border border-[var(--color-border)] bg-white px-5 py-4 transition hover:-translate-y-0.5 hover:border-[var(--color-accent)]">
-              <div className="grid gap-3 lg:grid-cols-[0.18fr_0.18fr_0.14fr_0.14fr_0.14fr_0.12fr_0.1fr] lg:items-center">
-                <Cell label="Name" value={loan.customerName} subValue={loan.accountNumber} strong />
-                <Cell label="Company" value={loan.company} />
-                <Cell label="Date" value={loan.loanDate} />
-                <Cell label="Phone no." value={loan.phoneNumber} />
-                <Cell label="Loan type" value={loan.loanType} />
-                <Cell label="Loan amount" value={`Rs ${getOutstandingLoanAmount(loan).toFixed(2)}`} />
-                <div><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)] lg:hidden">Status</p><span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium uppercase tracking-[0.14em] ${loan.status === "Active" ? "bg-emerald-100 text-emerald-800" : "bg-stone-200 text-stone-800"}`}>{loan.status}</span></div>
-              </div>
-            </Link>
-          ))}
+            {filteredLoans.map((loan) => (
+              <Link key={loan.accountNumber} href={`/loans/${loan.id}?company=${encodeURIComponent(loan.company)}`} className="rounded-[24px] border border-[var(--color-border)] bg-white px-5 py-4 transition hover:-translate-y-0.5 hover:border-[var(--color-accent)]">
+                <div className={`grid gap-3 lg:items-center ${loanGridClass}`}>
+                  <Cell label="Name" value={loan.customerName} subValue={loan.accountNumber} strong />
+                  <Cell label="Company" value={loan.company} />
+                  <Cell label="Date" value={loan.loanDate} />
+                  <Cell label="Phone no." value={loan.phoneNumber} />
+                  <Cell label="Loan type" value={loan.loanType} />
+                  <Cell label="Loan amount" value={`Rs ${getOutstandingLoanAmount(loan).toFixed(2)}`} />
+                  <div><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)] lg:hidden">Status</p><span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium uppercase tracking-[0.14em] ${loan.status === "Active" ? "bg-emerald-100 text-emerald-800" : "bg-stone-200 text-stone-800"}`}>{loan.status}</span></div>
+                </div>
+              </Link>
+            ))}
+          </div>
         </div>
       </section>
     </div>
@@ -94,5 +98,5 @@ export default function SearchLoanPage() {
 }
 
 function Cell({ label, value, subValue, strong = false }: { label: string; value: string; subValue?: string; strong?: boolean }) {
-  return <div><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)] lg:hidden">{label}</p><p className={strong ? "text-sm font-semibold text-[var(--color-ink)]" : "text-sm text-[var(--color-muted)]"}>{value}</p>{subValue ? <p className="mt-1 text-xs text-[var(--color-muted)]">{subValue}</p> : null}</div>;
+  return <div className="min-w-0"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)] lg:hidden">{label}</p><p className={strong ? "text-sm font-semibold leading-7 text-[var(--color-ink)]" : "text-sm leading-7 text-[var(--color-muted)]"}>{value}</p>{subValue ? <p className="mt-1 text-xs text-[var(--color-muted)]">{subValue}</p> : null}</div>;
 }
