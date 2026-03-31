@@ -1,57 +1,51 @@
 ﻿"use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { companyOptions, matchesCompanyFilter } from "@/lib/companies";
-
-const previewCustomers = [
-  {
-    customerCode: "102344",
-    fullName: "Priya S",
-    phoneNumber: "+91 98400 12345",
-    area: "Gandhipuram",
-    company: "Vishnu Bankers - Main Branch",
-    status: "Photo complete",
-  },
-  {
-    customerCode: "102198",
-    fullName: "Ramesh K",
-    phoneNumber: "+91 98940 55123",
-    area: "Pollachi",
-    company: "Vishnu Bankers - Main Branch",
-    status: "Address review",
-  },
-  {
-    customerCode: "102145",
-    fullName: "Meena V",
-    phoneNumber: "+91 97890 44002",
-    area: "Tiruppur",
-    company: "Vishnu Bankers - Main Branch",
-    status: "Ready for loan issue",
-  },
-  {
-    customerCode: "103210",
-    fullName: "Karthik R",
-    phoneNumber: "+91 93450 22018",
-    area: "Town Hall",
-    company: "Vishnu Bankers - Town Office",
-    status: "KYC complete",
-  },
-  {
-    customerCode: "104011",
-    fullName: "Divya N",
-    phoneNumber: "+91 94433 90902",
-    area: "Goldsmith Lane",
-    company: "Vishnu Bankers - Gold Unit",
-    status: "Ready for renewal",
-  },
-];
+import type { CustomerListItem } from "@/lib/customers";
 
 export function CustomerListPreview() {
   const [companyFilter, setCompanyFilter] = useState("");
+  const [customers, setCustomers] = useState<CustomerListItem[]>([]);
+  const [statusMessage, setStatusMessage] = useState("Loading customer profiles from Supabase...");
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadCustomers() {
+      try {
+        const response = await fetch("/api/customers", { cache: "no-store" });
+        const result = await response.json();
+
+        if (!isMounted) {
+          return;
+        }
+
+        if (!response.ok) {
+          setStatusMessage(result.error ?? "Unable to load customer profiles.");
+          return;
+        }
+
+        setCustomers(result.customers ?? []);
+        setStatusMessage("Customer preview is now reading from Supabase.");
+      } catch {
+        if (isMounted) {
+          setStatusMessage("Unable to reach the customer API.");
+        }
+      }
+    }
+
+    loadCustomers();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const filteredCustomers = useMemo(
-    () => previewCustomers.filter((customer) => matchesCompanyFilter(customer.company, companyFilter)),
-    [companyFilter],
+    () => customers.filter((customer) => matchesCompanyFilter(customer.company, companyFilter)),
+    [companyFilter, customers],
   );
 
   return (
@@ -64,6 +58,7 @@ export function CustomerListPreview() {
           <h2 className="mt-2 text-2xl font-semibold text-[var(--color-ink)]">
             Customer list preview
           </h2>
+          <p className="mt-2 text-sm text-[var(--color-muted)]">{statusMessage}</p>
         </div>
         <div className="w-full max-w-[260px]">
           <select value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]">
@@ -76,7 +71,7 @@ export function CustomerListPreview() {
       <div className="mt-6 space-y-3">
         {filteredCustomers.map((customer) => (
           <article
-            key={customer.customerCode}
+            key={customer.id}
             className="rounded-[24px] border border-[var(--color-border)] bg-white px-5 py-4"
           >
             <div className="grid gap-4 lg:grid-cols-[0.14fr_0.2fr_0.22fr_0.18fr_0.18fr_0.08fr] lg:items-center">
@@ -93,6 +88,12 @@ export function CustomerListPreview() {
             </div>
           </article>
         ))}
+
+        {!filteredCustomers.length ? (
+          <div className="rounded-[24px] border border-dashed border-[var(--color-border)] bg-white px-5 py-8 text-center text-sm text-[var(--color-muted)]">
+            No customers available for the selected filter yet.
+          </div>
+        ) : null}
       </div>
     </section>
   );

@@ -235,7 +235,7 @@ export function LoanDetailView({ loan }: LoanDetailViewProps) {
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">Loan Details</p>
               <h1 className="mt-2 text-3xl font-semibold text-[var(--color-ink)]">{loan.accountNumber}</h1>
-              <p className="mt-2 text-sm text-[var(--color-muted)]">{loan.loanType} · {loan.company}</p>
+              <p className="mt-2 text-sm text-[var(--color-muted)]">{loan.loanType} | {loan.company}</p>
             </div>
             <div className="flex flex-wrap gap-3">
               <div className="rounded-2xl bg-[var(--color-panel-strong)] px-4 py-3 text-sm font-medium text-[var(--color-ink)]">Original loan: {formatCurrency(loan.originalLoanAmount)}</div>
@@ -371,4 +371,5 @@ function MetricCard({ icon, label, value }: { icon: import("react").ReactNode; l
 function Cell({ label, value, subValue, strong = false }: { label: string; value: string; subValue?: string; strong?: boolean }) {
   return <div className="min-w-0"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)] lg:hidden">{label}</p><p className={strong ? "text-sm font-semibold leading-7 text-[var(--color-ink)]" : "text-sm leading-7 text-[var(--color-muted)]"}>{value}</p>{subValue ? <p className="mt-1 text-xs text-[var(--color-muted)]">{subValue}</p> : null}</div>;
 }
+
 

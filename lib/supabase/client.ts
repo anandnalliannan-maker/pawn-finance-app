@@ -1,8 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 
-let browserClient:
-  | ReturnType<typeof createClient>
-  | undefined;
+// Temporary untyped bridge until generated Supabase database types are added.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let browserClient: ReturnType<typeof createClient<any>> | undefined;
 
 export function getSupabaseBrowserClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -14,6 +14,7 @@ export function getSupabaseBrowserClient() {
     );
   }
 
-  browserClient ??= createClient(url, anonKey);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  browserClient ??= createClient<any>(url, anonKey);
   return browserClient;
 }

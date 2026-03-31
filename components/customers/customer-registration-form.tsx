@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { Camera, Paperclip, Save } from "lucide-react";
 
+import type { CreateCustomerPayload } from "@/lib/customers";
+
 type CustomerFormState = {
   fullName: string;
   phoneNumber: string;
@@ -16,12 +18,6 @@ type CustomerFormState = {
   referenceName: string;
   remarks: string;
 };
-
-const existingCustomers = [
-  { phoneNumber: "+91 98400 12345", aadhaarNumber: "4587 9987 1120" },
-  { phoneNumber: "+91 98940 55123", aadhaarNumber: "8876 5523 1098" },
-  { phoneNumber: "+91 97890 44002", aadhaarNumber: "7744 6622 1144" },
-];
 
 const initialState: CustomerFormState = {
   fullName: "",
@@ -46,14 +42,7 @@ type FieldProps = {
   textarea?: boolean;
 };
 
-function FormField({
-  label,
-  name,
-  value,
-  onChange,
-  placeholder,
-  textarea = false,
-}: FieldProps) {
+function FormField({ label, name, value, onChange, placeholder, textarea = false }: FieldProps) {
   return (
     <label className="block space-y-2">
       <span className="text-sm font-medium text-[var(--color-muted)]">{label}</span>
@@ -77,11 +66,12 @@ function FormField({
   );
 }
 
-export function CustomerRegistrationForm() {
+export function CustomerRegistrationForm({ selectedCompany }: { selectedCompany: string }) {
   const [formState, setFormState] = useState(initialState);
   const [sameAsCurrentAddress, setSameAsCurrentAddress] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState(
-    "Customer draft mode is active. Live save will be enabled once the authenticated write path is connected.",
+    "Customer form is connected to the server save path. Photo and document storage wiring is the next backend step.",
   );
 
   function handleChange(name: keyof CustomerFormState, value: string) {
@@ -107,26 +97,50 @@ export function CustomerRegistrationForm() {
     }));
   }
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setIsSaving(true);
+    setStatusMessage("Saving customer to Supabase...");
 
-    const duplicatePhone = existingCustomers.some(
-      (customer) => customer.phoneNumber.replace(/\s+/g, "") === formState.phoneNumber.replace(/\s+/g, ""),
-    );
-    const duplicateAadhaar = existingCustomers.some(
-      (customer) => customer.aadhaarNumber.replace(/\s+/g, "") === formState.aadhaarNumber.replace(/\s+/g, ""),
-    );
+    const payload: CreateCustomerPayload = {
+      companyName: selectedCompany,
+      fullName: formState.fullName,
+      phoneNumber: formState.phoneNumber,
+      alternatePhoneNumber: formState.alternatePhoneNumber,
+      currentAddress: formState.currentAddress,
+      permanentAddress: formState.permanentAddress,
+      aadhaarNumber: formState.aadhaarNumber,
+      guardianLabel: formState.guardianLabel,
+      guardianName: formState.guardianName,
+      area: formState.area,
+      referenceName: formState.referenceName,
+      remarks: formState.remarks,
+    };
 
-    if (duplicatePhone || duplicateAadhaar) {
-      setStatusMessage(
-        duplicatePhone
-          ? "Customer cannot be saved because the phone number already exists."
-          : "Customer cannot be saved because the Aadhaar number already exists.",
-      );
-      return;
+    try {
+      const response = await fetch("/api/customers", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setStatusMessage(result.error ?? "Unable to save customer.");
+        return;
+      }
+
+      setFormState(initialState);
+      setSameAsCurrentAddress(false);
+      setStatusMessage(result.message ?? "Customer saved successfully.");
+    } catch {
+      setStatusMessage("Unable to reach the customer save endpoint.");
+    } finally {
+      setIsSaving(false);
     }
-
-    setStatusMessage("Customer form updated. Save wiring to Supabase is the next backend step.");
   }
 
   return (
@@ -153,6 +167,10 @@ export function CustomerRegistrationForm() {
 
       <div className="mt-8 space-y-8">
         <section className="grid gap-5 md:grid-cols-2">
+          <label className="block space-y-2 md:col-span-2">
+            <span className="text-sm font-medium text-[var(--color-muted)]">Company</span>
+            <input value={selectedCompany} readOnly className="w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-page)] px-4 py-3 text-[var(--color-muted)]" />
+          </label>
           <FormField label="Customer Name" name="fullName" value={formState.fullName} onChange={handleChange} placeholder="Enter full name" />
           <FormField label="Phone Number" name="phoneNumber" value={formState.phoneNumber} onChange={handleChange} placeholder="+91 98765 43210" />
           <FormField label="Alternate Phone" name="alternatePhoneNumber" value={formState.alternatePhoneNumber} onChange={handleChange} placeholder="+91 90000 00000" />
@@ -199,9 +217,9 @@ export function CustomerRegistrationForm() {
       <div className="mt-8 flex flex-col gap-4 border-t border-[var(--color-border)] pt-6 lg:flex-row lg:items-center lg:justify-between">
         <p className="max-w-3xl text-sm leading-7 text-[var(--color-muted)]">{statusMessage}</p>
 
-        <button type="submit" className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--color-accent-strong)]">
+        <button type="submit" disabled={isSaving} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-70">
           <Save className="h-4 w-4" />
-          Save Customer  F2
+          {isSaving ? "Saving..." : "Save Customer  F2"}
         </button>
       </div>
     </form>
