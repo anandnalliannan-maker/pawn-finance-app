@@ -69,8 +69,8 @@ export function buildEffectiveLoanPayments(
       ...payment,
       effectivePaymentFrom: latestCorrection?.correctedPaymentFrom || payment.paymentFrom,
       effectivePaymentUpto: latestCorrection?.correctedPaymentUpto || payment.paymentUpto,
-      netPrincipalPayment: Math.max(payment.principalPayment + principalAdjustment, 0),
-      netInterestPayment: Math.max(payment.interestPayment + interestAdjustment, 0),
+      netPrincipalPayment: payment.principalPayment + principalAdjustment,
+      netInterestPayment: payment.interestPayment + interestAdjustment,
       adjustments: relatedAdjustments,
     };
   });
@@ -123,3 +123,4 @@ export function buildFullReversalDraft(payment: LoanPaymentRecord) {
 export function todayDisplayDate() {
   return formatDisplayDate(new Date());
 }
+

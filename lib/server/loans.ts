@@ -478,10 +478,10 @@ export async function recordLoanPayment(
     companyId: loan.company_id as string,
     entryDate: payload.paymentDate,
     category: "incoming_payment",
-    direction: "incoming",
+    direction: payload.principalPayment + payload.interestPayment >= 0 ? "incoming" : "outgoing",
     description: `Loan payment received for account ${loan.account_number as string}`,
     reference: asArray(loan.customers)[0]?.full_name ?? "Loan payment",
-    amount: payload.principalPayment + payload.interestPayment,
+    amount: Math.abs(payload.principalPayment + payload.interestPayment),
     sourceType: "loan_payment",
     sourceId: paymentRow.id as string,
     createdBy: session.userId,
@@ -539,3 +539,6 @@ export async function closeLoan(session: AppSession, loanId: string) {
 
   return getLoanDetailById(session, loanId);
 }
+
+
+

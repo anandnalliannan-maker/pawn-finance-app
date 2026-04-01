@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, Paperclip, Plus, Save, Search, Sparkles, Trash2, UserRound } from "lucide-react";
 
 import type { CustomerListItem } from "@/lib/customers";
-import { formatIsoDate, parseAppDate, toDisplayDateFromIso } from "@/lib/date-utils";
+import { calculateSimpleInterestForRange, formatIsoDate, getDaysInMonth, parseAppDate, toDisplayDateFromIso } from "@/lib/date-utils";
 import type { CreateLoanPayload, LoanRecord } from "@/lib/loans";
 import type { LoanScheme } from "@/lib/schemes";
 
@@ -186,13 +186,26 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
     return Math.max(currentSequence, highestExisting) + 1;
   }, [currentAccountNumber, financialYearPrefix, sequenceMap]);
 
-  const monthlyInterest = useMemo(() => {
-    const principal = Number(loanAmount) || 0;
-    const rate = Number(interestPercent) || 0;
-    return (principal * rate) / 100;
-  }, [interestPercent, loanAmount]);
+  const daysInSelectedMonth = useMemo(() => getDaysInMonth(loanDate), [loanDate]);
 
-  const yearlyInterest = monthlyInterest * 12;
+  const monthlyInterest = useMemo(() => {
+    const loanDateValue = parseAppDate(loanDate);
+    if (Number.isNaN(loanDateValue.getTime())) {
+      return 0;
+    }
+
+    const monthStart = formatIsoDate(new Date(loanDateValue.getFullYear(), loanDateValue.getMonth(), 1));
+    const monthEnd = formatIsoDate(new Date(loanDateValue.getFullYear(), loanDateValue.getMonth() + 1, 0));
+    const rangeInterest = calculateSimpleInterestForRange(
+      Number(loanAmount) || 0,
+      Number(interestPercent) || 0,
+      monthStart,
+      monthEnd,
+    );
+    return rangeInterest.amount;
+  }, [interestPercent, loanAmount, loanDate]);
+
+  const yearlyInterest = useMemo(() => monthlyInterest * 12, [monthlyInterest]);
 
   function handleAccountNumberChange(value: string) {
     const rawSequence = value.includes("/") ? value.split("/").slice(1).join("/") : value;
@@ -404,7 +417,7 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
           <label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Loan Amount</span><input value={loanAmount} onChange={(event) => setLoanAmount(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label>
           <label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Scheme</span><select value={scheme} onChange={(event) => handleSchemeChange(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]"><option value="">Select later</option>{availableSchemes.map((item) => (<option key={item.id} value={item.id}>{item.name}</option>))}</select></label>
           <label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Interest %</span><input value={interestPercent} onChange={(event) => setInterestPercent(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label>
-          <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Interest per month</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">Rs {monthlyInterest.toFixed(2)}</p></div>
+          <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Interest per month</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">Rs {monthlyInterest.toFixed(2)}</p><p className="mt-1 text-xs text-[var(--color-muted)]">Simple interest for {daysInSelectedMonth} days in selected month</p></div>
           <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Interest per year</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">Rs {yearlyInterest.toFixed(2)}</p></div>
           <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Selected loan date</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{toDisplayDateFromIso(loanDate)}</p></div>
         </div>
@@ -437,5 +450,7 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
     </form>
   );
 }
+
+
 
 

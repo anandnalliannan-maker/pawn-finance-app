@@ -25,8 +25,8 @@ import {
   type PaymentAdjustmentRecord,
   type PaymentAdjustmentType,
 } from "@/lib/adjustments";
-import { formatIsoDate, toIsoDateFromDisplay } from "@/lib/date-utils";
-import type { LoanPaymentRecord, LoanRecord } from "@/lib/loans";
+import { calculateSimpleInterestForRange, formatIsoDate, toIsoDateFromDisplay } from "@/lib/date-utils";
+import type { LoanPaymentRecord, LoanRecord, PaymentEntryMode } from "@/lib/loans";
 
 type LoanDetailViewProps = { loan: LoanRecord };
 type PaymentDraft = {
@@ -34,7 +34,9 @@ type PaymentDraft = {
   paymentFrom: string;
   paymentUpto: string;
   principalPayment: string;
+  principalMode: PaymentEntryMode;
   interestPayment: string;
+  interestMode: PaymentEntryMode;
   notes: string;
 };
 type AdjustmentDraft = {
@@ -56,14 +58,30 @@ function toAmount(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function buildInitialDraft(loan: LoanRecord): PaymentDraft {
+function withSign(value: number, mode: PaymentEntryMode) {
+  const absoluteValue = Math.abs(value);
+  return mode === "less" ? -absoluteValue : absoluteValue;
+}
+
+function buildInitialDraft(loan: LoanRecord, outstandingLoan: number): PaymentDraft {
   const lastPayment = loan.payments[loan.payments.length - 1];
+  const paymentFrom = toIsoDateFromDisplay(lastPayment?.paymentUpto ?? loan.loanDate);
+  const paymentUpto = formatIsoDate(new Date());
+  const suggestedInterest = calculateSimpleInterestForRange(
+    outstandingLoan,
+    loan.interestPercent,
+    paymentFrom,
+    paymentUpto,
+  ).amount;
+
   return {
     paymentDate: formatIsoDate(new Date()),
-    paymentFrom: toIsoDateFromDisplay(lastPayment?.paymentUpto ?? loan.loanDate),
-    paymentUpto: formatIsoDate(new Date()),
+    paymentFrom,
+    paymentUpto,
     principalPayment: "",
-    interestPayment: "",
+    principalMode: "add",
+    interestPayment: suggestedInterest > 0 ? suggestedInterest.toFixed(2) : "",
+    interestMode: "add",
     notes: "",
   };
 }
@@ -88,7 +106,7 @@ export function LoanDetailView({ loan }: LoanDetailViewProps) {
   const [showCloseLoanModal, setShowCloseLoanModal] = useState(false);
   const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
   const [closeAcknowledged, setCloseAcknowledged] = useState(false);
-  const [paymentDraft, setPaymentDraft] = useState<PaymentDraft>(() => buildInitialDraft(loan));
+  const [paymentDraft, setPaymentDraft] = useState<PaymentDraft>(() => buildInitialDraft(loan, loan.originalLoanAmount));
   const [selectedPaymentId, setSelectedPaymentId] = useState<string | null>(null);
   const [adjustmentDraft, setAdjustmentDraft] = useState<AdjustmentDraft | null>(null);
   const [statusMessage, setStatusMessage] = useState(
@@ -109,6 +127,17 @@ export function LoanDetailView({ loan }: LoanDetailViewProps) {
   const interestCleared = isInterestPaidUptoDateFromEffectivePayments(effectivePayments);
   const canCloseLoan = outstandingLoan === 0 && interestCleared;
   const selectedPayment = loanState.payments.find((payment) => payment.id === selectedPaymentId) ?? null;
+  const suggestedInterest = useMemo(
+    () =>
+      calculateSimpleInterestForRange(
+        outstandingLoan,
+        loanState.interestPercent,
+        paymentDraft.paymentFrom,
+        paymentDraft.paymentUpto,
+      ),
+    [loanState.interestPercent, outstandingLoan, paymentDraft.paymentFrom, paymentDraft.paymentUpto],
+  );
+
   useEffect(() => {
     let isMounted = true;
 
@@ -138,7 +167,7 @@ export function LoanDetailView({ loan }: LoanDetailViewProps) {
   }, [loan.id]);
 
   function openPaymentModal() {
-    setPaymentDraft(buildInitialDraft(loanState));
+    setPaymentDraft(buildInitialDraft(loanState, outstandingLoan));
     setShowPaymentModal(true);
   }
 
@@ -177,12 +206,35 @@ export function LoanDetailView({ loan }: LoanDetailViewProps) {
     setPaymentDraft((current) => ({ ...current, [field]: value }));
   }
 
+  function applySuggestedInterest() {
+    setPaymentDraft((current) => ({
+      ...current,
+      interestPayment: suggestedInterest.amount > 0 ? suggestedInterest.amount.toFixed(2) : "",
+      interestMode: "add",
+    }));
+  }
+
   function handleAdjustmentDraftChange(field: keyof AdjustmentDraft, value: string) {
     setAdjustmentDraft((current) => (current ? { ...current, [field]: value } : current));
   }
+
   async function handlePaymentSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsSubmitting(true);
+
+    const principalAmount = toAmount(paymentDraft.principalPayment);
+    const cappedPrincipalAmount =
+      paymentDraft.principalMode === "add"
+        ? Math.min(Math.abs(principalAmount), outstandingLoan)
+        : Math.abs(principalAmount);
+    const signedPrincipalPayment = withSign(cappedPrincipalAmount, paymentDraft.principalMode);
+    const signedInterestPayment = withSign(toAmount(paymentDraft.interestPayment), paymentDraft.interestMode);
+
+    if (!signedPrincipalPayment && !signedInterestPayment) {
+      setStatusMessage("Enter a principal or interest value before saving the payment.");
+      setIsSubmitting(false);
+      return;
+    }
 
     try {
       const response = await fetch(`/api/loans/${loanState.id}/payments`, {
@@ -194,8 +246,8 @@ export function LoanDetailView({ loan }: LoanDetailViewProps) {
           paymentDate: paymentDraft.paymentDate,
           paymentFrom: paymentDraft.paymentFrom,
           paymentUpto: paymentDraft.paymentUpto,
-          principalPayment: Math.min(toAmount(paymentDraft.principalPayment), outstandingLoan),
-          interestPayment: toAmount(paymentDraft.interestPayment),
+          principalPayment: signedPrincipalPayment,
+          interestPayment: signedInterestPayment,
           notes: paymentDraft.notes,
         }),
       });
@@ -347,7 +399,8 @@ export function LoanDetailView({ loan }: LoanDetailViewProps) {
               <InfoCard label="Date" value={loanState.loanDate} />
               <InfoCard label="Loan type" value={loanState.loanType} />
               <InfoCard label="Scheme" value={loanState.schemeName} />
-              <InfoCard label="Interest %" value={`${loanState.interestPercent.toFixed(2)}%`} />
+              <InfoCard label="Interest %" value={`${loanState.interestPercent.toFixed(2)}% per month`} />
+              <InfoCard label="Interest model" value="Simple interest only" />
               <InfoCard label="Total principal paid" value={formatCurrency(totalPrincipalPaid)} />
               <InfoCard label="Total interest paid" value={formatCurrency(totalInterestPaid)} />
               <InfoCard label="Outstanding loan" value={formatCurrency(outstandingLoan)} />
@@ -424,7 +477,7 @@ export function LoanDetailView({ loan }: LoanDetailViewProps) {
         </section>
       </div>
 
-      {showPaymentModal ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(26,24,20,0.46)] p-4"><div className="w-full max-w-2xl rounded-[30px] border border-[var(--color-border)] bg-[var(--color-panel)] p-6 shadow-[0_32px_80px_rgba(26,24,20,0.22)] sm:p-8"><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">Record Payment</p><h2 className="mt-2 text-2xl font-semibold text-[var(--color-ink)]">{loanState.accountNumber}</h2></div><button type="button" onClick={closePaymentModal} className="rounded-2xl border border-[var(--color-border)] bg-white p-3 text-[var(--color-muted)] transition hover:text-[var(--color-ink)]" aria-label="Close payment popup"><X className="h-4 w-4" /></button></div><form onSubmit={handlePaymentSubmit} className="mt-6 space-y-5"><div className="grid gap-4 md:grid-cols-2"><MetricCard icon={<FileText className="h-4 w-4 text-[var(--color-accent)]" />} label="Original loan" value={formatCurrency(loanState.originalLoanAmount)} /><MetricCard icon={<HandCoins className="h-4 w-4 text-[var(--color-accent)]" />} label="Outstanding loan" value={formatCurrency(outstandingLoan)} /></div><div className="grid gap-4 md:grid-cols-2"><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Payment date</span><input type="date" value={paymentDraft.paymentDate} onChange={(event) => handleDraftChange("paymentDate", event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Principal payment</span><input value={paymentDraft.principalPayment} onChange={(event) => handleDraftChange("principalPayment", event.target.value)} placeholder="0" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Interest payment from</span><input type="date" value={paymentDraft.paymentFrom} onChange={(event) => handleDraftChange("paymentFrom", event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Interest payment upto</span><input type="date" value={paymentDraft.paymentUpto} onChange={(event) => handleDraftChange("paymentUpto", event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2 md:col-span-2"><span className="text-sm font-medium text-[var(--color-muted)]">Interest payment</span><input value={paymentDraft.interestPayment} onChange={(event) => handleDraftChange("interestPayment", event.target.value)} placeholder="0" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2 md:col-span-2"><span className="text-sm font-medium text-[var(--color-muted)]">Remarks</span><textarea value={paymentDraft.notes} onChange={(event) => handleDraftChange("notes", event.target.value)} rows={3} placeholder="Optional note for this payment" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label></div><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="inline-flex items-center gap-2 text-sm text-[var(--color-muted)]"><CalendarClock className="h-4 w-4 text-[var(--color-accent)]" />Principal payment reduces the outstanding loan immediately.</div><button type="submit" disabled={isSubmitting} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-70"><Save className="h-4 w-4" />Save payment</button></div></form></div></div> : null}
+      {showPaymentModal ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(26,24,20,0.46)] p-4"><div className="w-full max-w-3xl rounded-[30px] border border-[var(--color-border)] bg-[var(--color-panel)] p-6 shadow-[0_32px_80px_rgba(26,24,20,0.22)] sm:p-8"><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">Record Payment</p><h2 className="mt-2 text-2xl font-semibold text-[var(--color-ink)]">{loanState.accountNumber}</h2></div><button type="button" onClick={closePaymentModal} className="rounded-2xl border border-[var(--color-border)] bg-white p-3 text-[var(--color-muted)] transition hover:text-[var(--color-ink)]" aria-label="Close payment popup"><X className="h-4 w-4" /></button></div><form onSubmit={handlePaymentSubmit} className="mt-6 space-y-5"><div className="grid gap-4 md:grid-cols-2"><MetricCard icon={<FileText className="h-4 w-4 text-[var(--color-accent)]" />} label="Original loan" value={formatCurrency(loanState.originalLoanAmount)} /><MetricCard icon={<HandCoins className="h-4 w-4 text-[var(--color-accent)]" />} label="Outstanding loan" value={formatCurrency(outstandingLoan)} /></div><div className="grid gap-4 md:grid-cols-2"><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Payment date</span><input type="date" value={paymentDraft.paymentDate} onChange={(event) => handleDraftChange("paymentDate", event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Interest model</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">Simple interest only</p><p className="mt-1 text-xs text-[var(--color-muted)]">Calculated month by month using actual days in each month.</p></div><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Interest payment from</span><input type="date" value={paymentDraft.paymentFrom} onChange={(event) => handleDraftChange("paymentFrom", event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Interest payment upto</span><input type="date" value={paymentDraft.paymentUpto} onChange={(event) => handleDraftChange("paymentUpto", event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3 md:col-span-2"><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Suggested interest for selected range</p><p className="mt-2 text-lg font-semibold text-[var(--color-ink)]">{formatCurrency(suggestedInterest.amount)}</p><p className="mt-1 text-xs text-[var(--color-muted)]">{suggestedInterest.days} day(s) | outstanding principal {formatCurrency(outstandingLoan)}</p></div><button type="button" onClick={applySuggestedInterest} className="inline-flex items-center justify-center rounded-2xl border border-[var(--color-border)] px-4 py-3 text-sm font-semibold text-[var(--color-ink)] transition hover:border-[var(--color-accent)]">Use suggested amount</button></div></div><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Principal entry</span><div className="grid grid-cols-2 gap-2"><ModeButton active={paymentDraft.principalMode === "add"} label="Add" onClick={() => handleDraftChange("principalMode", "add")} /><ModeButton active={paymentDraft.principalMode === "less"} label="Less" onClick={() => handleDraftChange("principalMode", "less")} /></div></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Principal payment</span><input value={paymentDraft.principalPayment} onChange={(event) => handleDraftChange("principalPayment", event.target.value)} placeholder="0" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Interest entry</span><div className="grid grid-cols-2 gap-2"><ModeButton active={paymentDraft.interestMode === "add"} label="Add" onClick={() => handleDraftChange("interestMode", "add")} /><ModeButton active={paymentDraft.interestMode === "less"} label="Less" onClick={() => handleDraftChange("interestMode", "less")} /></div></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Interest payment</span><input value={paymentDraft.interestPayment} onChange={(event) => handleDraftChange("interestPayment", event.target.value)} placeholder="0" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2 md:col-span-2"><span className="text-sm font-medium text-[var(--color-muted)]">Remarks</span><textarea value={paymentDraft.notes} onChange={(event) => handleDraftChange("notes", event.target.value)} rows={3} placeholder="Optional note for this payment" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label></div><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="inline-flex items-center gap-2 text-sm text-[var(--color-muted)]"><CalendarClock className="h-4 w-4 text-[var(--color-accent)]" />Add reduces outstanding only when the principal value is positive. Less posts a correcting negative entry.</div><button type="submit" disabled={isSubmitting} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-70"><Save className="h-4 w-4" />Save payment</button></div></form></div></div> : null}
 
       {showAdjustmentModal && selectedPayment && adjustmentDraft ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(26,24,20,0.46)] p-4"><div className="w-full max-w-3xl rounded-[30px] border border-[var(--color-border)] bg-[var(--color-panel)] p-6 shadow-[0_32px_80px_rgba(26,24,20,0.22)] sm:p-8"><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">Payment Correction</p><h2 className="mt-2 text-2xl font-semibold text-[var(--color-ink)]">{loanState.accountNumber}</h2><p className="mt-2 text-sm text-[var(--color-muted)]">Original payment dated {selectedPayment.paymentDate} remains preserved.</p></div><button type="button" onClick={closeAdjustmentModal} className="rounded-2xl border border-[var(--color-border)] bg-white p-3 text-[var(--color-muted)] transition hover:text-[var(--color-ink)]" aria-label="Close adjustment popup"><X className="h-4 w-4" /></button></div><form onSubmit={handleAdjustmentSubmit} className="mt-6 space-y-5"><div className="grid gap-4 md:grid-cols-2"><MetricCard icon={<FileText className="h-4 w-4 text-[var(--color-accent)]" />} label="Original principal" value={formatCurrency(selectedPayment.principalPayment)} /><MetricCard icon={<FileText className="h-4 w-4 text-[var(--color-accent)]" />} label="Original interest" value={formatCurrency(selectedPayment.interestPayment)} /></div><div className="grid gap-4 md:grid-cols-2"><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Correction type</span><select value={adjustmentDraft.correctionType} onChange={(event) => handleAdjustmentDraftChange("correctionType", event.target.value as PaymentAdjustmentType)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]"><option value="Full Reversal">Full reversal</option><option value="Partial Adjustment">Partial adjustment</option></select></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Acknowledged by</span><input value={adjustmentDraft.acknowledgedBy} onChange={(event) => handleAdjustmentDraftChange("acknowledgedBy", event.target.value)} placeholder="Staff / Admin name" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Principal adjustment</span><input value={adjustmentDraft.principalAdjustment} onChange={(event) => handleAdjustmentDraftChange("principalAdjustment", event.target.value)} placeholder="Use negative values for reversal" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Interest adjustment</span><input value={adjustmentDraft.interestAdjustment} onChange={(event) => handleAdjustmentDraftChange("interestAdjustment", event.target.value)} placeholder="Use negative values for reversal" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Corrected interest from</span><input type="date" value={adjustmentDraft.correctedPaymentFrom} onChange={(event) => handleAdjustmentDraftChange("correctedPaymentFrom", event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Corrected interest upto</span><input type="date" value={adjustmentDraft.correctedPaymentUpto} onChange={(event) => handleAdjustmentDraftChange("correctedPaymentUpto", event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2 md:col-span-2"><span className="text-sm font-medium text-[var(--color-muted)]">Reason</span><textarea value={adjustmentDraft.reason} onChange={(event) => handleAdjustmentDraftChange("reason", event.target.value)} rows={4} placeholder="Mandatory reason for reversal or correction" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label></div><div className="rounded-[24px] border border-[var(--color-border)] bg-white p-4 text-sm text-[var(--color-muted)]"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-4 w-4 text-[var(--color-accent)]" /><p>The original payment entry will not be edited. This action posts a linked correction entry and the loan balances are recalculated from the net effect.</p></div></div><div className="flex justify-end"><button type="submit" className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--color-accent-strong)]"><Save className="h-4 w-4" />Post adjustment</button></div></form></div></div> : null}
 
@@ -445,6 +498,14 @@ function Cell({ label, value, subValue, strong = false }: { label: string; value
   return <div className="min-w-0"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)] lg:hidden">{label}</p><p className={strong ? "text-sm font-semibold leading-7 text-[var(--color-ink)]" : "text-sm leading-7 text-[var(--color-muted)]"}>{value}</p>{subValue ? <p className="mt-1 text-xs text-[var(--color-muted)]">{subValue}</p> : null}</div>;
 }
 
-
-
-
+function ModeButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={active ? "rounded-2xl border border-[var(--color-accent)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm font-semibold text-[var(--color-accent-strong)]" : "rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-muted)] transition hover:border-[var(--color-accent)] hover:text-[var(--color-ink)]"}
+    >
+      {label}
+    </button>
+  );
+}

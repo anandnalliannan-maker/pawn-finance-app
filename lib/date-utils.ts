@@ -1,4 +1,4 @@
-﻿export function formatDisplayDate(date: Date) {
+export function formatDisplayDate(date: Date) {
   return date.toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",
@@ -66,4 +66,62 @@ export function isDateWithinRange(value: string, fromDate: string, toDate: strin
   }
 
   return true;
+}
+
+export function getDaysInMonth(value: string | Date) {
+  const date = typeof value === "string" ? parseAppDate(value) : value;
+  if (Number.isNaN(date.getTime())) {
+    return 0;
+  }
+
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+}
+
+export function calculateSimpleInterestForRange(
+  principal: number,
+  monthlyInterestPercent: number,
+  fromValue: string,
+  uptoValue: string,
+) {
+  const fromDate = parseAppDate(fromValue);
+  const uptoDate = parseAppDate(uptoValue);
+
+  if (
+    Number.isNaN(fromDate.getTime()) ||
+    Number.isNaN(uptoDate.getTime()) ||
+    principal <= 0 ||
+    monthlyInterestPercent <= 0 ||
+    uptoDate < fromDate
+  ) {
+    return { amount: 0, days: 0 };
+  }
+
+  const cursor = new Date(fromDate);
+  cursor.setHours(0, 0, 0, 0);
+  const end = new Date(uptoDate);
+  end.setHours(0, 0, 0, 0);
+
+  let totalInterest = 0;
+  let totalDays = 0;
+
+  while (cursor <= end) {
+    const year = cursor.getFullYear();
+    const month = cursor.getMonth();
+    const monthEnd = new Date(year, month + 1, 0);
+    monthEnd.setHours(0, 0, 0, 0);
+    const segmentEnd = monthEnd < end ? monthEnd : end;
+    const daysInThisMonth = getDaysInMonth(cursor);
+    const coveredDays = Math.floor((segmentEnd.getTime() - cursor.getTime()) / 86400000) + 1;
+
+    totalInterest += (principal * (monthlyInterestPercent / 100) * coveredDays) / daysInThisMonth;
+    totalDays += coveredDays;
+
+    cursor.setMonth(cursor.getMonth() + 1, 1);
+    cursor.setHours(0, 0, 0, 0);
+  }
+
+  return {
+    amount: Number(totalInterest.toFixed(2)),
+    days: totalDays,
+  };
 }

@@ -1,4 +1,5 @@
 export type LoanStatus = "Active" | "Closed";
+export type PaymentEntryMode = "add" | "less";
 
 export type LoanPaymentRecord = {
   id: string;
