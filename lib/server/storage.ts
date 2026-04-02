@@ -15,8 +15,26 @@ function sanitizeFileName(value: string) {
   return value.replace(/[^a-zA-Z0-9._-]+/g, "-");
 }
 
+async function ensureAttachmentsBucket() {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase.storage.getBucket(ATTACHMENTS_BUCKET);
+
+  if (!error && data) {
+    return;
+  }
+
+  const { error: createError } = await supabase.storage.createBucket(ATTACHMENTS_BUCKET, {
+    public: false,
+  });
+
+  if (createError && !createError.message.toLowerCase().includes("already exists")) {
+    throw new Error(createError.message);
+  }
+}
+
 export async function uploadAttachmentFiles(context: string, companyName: string, files: File[]) {
   const supabase = getSupabaseServerClient();
+  await ensureAttachmentsBucket();
   const companyFolder = slugify(companyName);
   const uploaded: string[] = [];
 
@@ -47,6 +65,7 @@ export async function getSignedAttachmentUrl(path: string | null | undefined) {
   }
 
   const supabase = getSupabaseServerClient();
+  await ensureAttachmentsBucket();
   const { data, error } = await supabase.storage.from(ATTACHMENTS_BUCKET).createSignedUrl(path, 3600);
 
   if (error) {
