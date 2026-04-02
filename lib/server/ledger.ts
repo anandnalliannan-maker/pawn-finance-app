@@ -23,6 +23,7 @@ type LedgerRow = {
   description: string;
   reference: string;
   amount: number | string;
+  source_account: string | null;
   companies: CompanyRelation;
 };
 
@@ -33,6 +34,7 @@ type VoucherRow = {
   payee: string;
   remarks: string | null;
   amount: number | string;
+  source_account: string | null;
   supporting_document_paths: unknown;
   companies: CompanyRelation;
 };
@@ -65,6 +67,7 @@ type LedgerInsertInput = {
   amount: number;
   sourceType: LedgerSourceType;
   sourceId: string;
+  sourceAccount?: string | null;
   metadata?: Record<string, unknown>;
   createdBy?: string;
 };
@@ -142,6 +145,7 @@ export async function postLedgerEntry(input: LedgerInsertInput) {
       amount: input.amount,
       source_type: input.sourceType,
       source_id: input.sourceId,
+      source_account: input.sourceAccount ?? null,
       metadata: input.metadata ?? {},
       created_by: input.createdBy ?? null,
     },
@@ -157,7 +161,7 @@ export async function listLedgerEntries(session: AppSession) {
   const supabase = getSupabaseServerClient();
   let query = supabase
     .from("ledger_entries")
-    .select("id, entry_date, category, direction, description, reference, amount, companies!inner(name)")
+    .select("id, entry_date, category, direction, description, reference, amount, source_account, companies!inner(name)")
     .order("entry_date", { ascending: false })
     .limit(500);
 
@@ -182,6 +186,7 @@ export async function listLedgerEntries(session: AppSession) {
     description: row.description,
     reference: row.reference,
     amount: asNumber(row.amount),
+    sourceAccount: row.source_account ?? "-",
   }));
 }
 
@@ -189,7 +194,7 @@ export async function listVoucherEntries(session: AppSession) {
   const supabase = getSupabaseServerClient();
   let query = supabase
     .from("voucher_entries")
-    .select("id, voucher_date, category, payee, remarks, amount, supporting_document_paths, companies!inner(name)")
+    .select("id, voucher_date, category, payee, remarks, amount, source_account, supporting_document_paths, companies!inner(name)")
     .order("voucher_date", { ascending: false })
     .limit(250);
 
@@ -214,5 +219,6 @@ export async function listVoucherEntries(session: AppSession) {
     remarks: row.remarks ?? "",
     amount: asNumber(row.amount),
     attachmentCount: Array.isArray(row.supporting_document_paths) ? row.supporting_document_paths.length : 0,
+    sourceAccount: row.source_account ?? "-",
   }));
 }

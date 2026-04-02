@@ -6,6 +6,7 @@ import { AlertCircle, Paperclip, Plus, Save, Search, Sparkles, Trash2, UserRound
 import type { CustomerListItem } from "@/lib/customers";
 import { calculateSimpleInterestForRange, formatIsoDate, getDaysInMonth, parseAppDate, toDisplayDateFromIso } from "@/lib/date-utils";
 import type { CreateLoanPayload, LoanRecord } from "@/lib/loans";
+import { sourceAccounts } from "@/lib/source-accounts";
 import type { LoanScheme } from "@/lib/schemes";
 
 type LoanCreationFormProps = {
@@ -96,6 +97,7 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
   const [accountWasEdited, setAccountWasEdited] = useState(false);
   const [jewelRows, setJewelRows] = useState<JewelRow[]>([buildJewelRow(1)]);
   const [supportingDocuments, setSupportingDocuments] = useState<string[]>([]);
+  const [sourceAccount, setSourceAccount] = useState<(typeof sourceAccounts)[number]>("Cash in Hand");
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -265,6 +267,7 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
       loanAmount: Number(loanAmount) || 0,
       schemeName: availableSchemes.find((item) => item.id === scheme)?.name || undefined,
       interestPercent: Number(interestPercent) || 0,
+      sourceAccount,
       supportingDocuments,
       jewelItems:
         loanType === "jewel_loan"
@@ -315,6 +318,7 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
       setAccountError("");
       setJewelRows([buildJewelRow(1)]);
       setSupportingDocuments([]);
+      setSourceAccount("Cash in Hand");
       setStatusMessage(result.message ?? "Loan saved successfully.");
     } catch {
       setStatusMessage("Unable to reach the loan save endpoint.");
@@ -417,6 +421,7 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
           <label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Loan Amount</span><input value={loanAmount} onChange={(event) => setLoanAmount(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label>
           <label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Scheme</span><select value={scheme} onChange={(event) => handleSchemeChange(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]"><option value="">Select later</option>{availableSchemes.map((item) => (<option key={item.id} value={item.id}>{item.name}</option>))}</select></label>
           <label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Interest %</span><input value={interestPercent} onChange={(event) => setInterestPercent(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label>
+          <label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Disbursal source</span><select value={sourceAccount} onChange={(event) => setSourceAccount(event.target.value as (typeof sourceAccounts)[number])} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]">{sourceAccounts.map((item) => (<option key={item} value={item}>{item}</option>))}</select></label>
           <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Interest per month</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">Rs {monthlyInterest.toFixed(2)}</p><p className="mt-1 text-xs text-[var(--color-muted)]">Simple interest for {daysInSelectedMonth} days in selected month</p></div>
           <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Interest per year</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">Rs {yearlyInterest.toFixed(2)}</p></div>
           <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Selected loan date</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{toDisplayDateFromIso(loanDate)}</p></div>
@@ -450,6 +455,9 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
     </form>
   );
 }
+
+
+
 
 
 

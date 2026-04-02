@@ -37,6 +37,7 @@ export type LoanRecord = {
   interestPercent: number;
   originalLoanAmount: number;
   supportingDocumentCount: number;
+  sourceAccount: string;
   status: LoanStatus;
   jewelDetails?: JewelDetail[];
   payments: LoanPaymentRecord[];
@@ -51,6 +52,7 @@ export type CreateLoanPayload = {
   loanAmount: number;
   schemeName?: string;
   interestPercent: number;
+  sourceAccount: string;
   supportingDocuments?: string[];
   jewelItems?: Array<{
     jewelType: string;

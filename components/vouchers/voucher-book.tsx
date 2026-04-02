@@ -6,6 +6,7 @@ import { AlertCircle, Paperclip, ReceiptText, Save } from "lucide-react";
 import { companyOptions, matchesCompanyFilter } from "@/lib/companies";
 import { formatIsoDate, isDateWithinRange } from "@/lib/date-utils";
 import { voucherCategories, type VoucherEntry } from "@/lib/ledger";
+import { sourceAccounts } from "@/lib/source-accounts";
 
 function formatCurrency(value: number) {
   return `Rs ${value.toFixed(2)}`;
@@ -18,6 +19,7 @@ export function VoucherBook({ selectedCompany }: { selectedCompany: string }) {
   const [payee, setPayee] = useState("");
   const [remarks, setRemarks] = useState("");
   const [amount, setAmount] = useState("0");
+  const [sourceAccount, setSourceAccount] = useState<(typeof sourceAccounts)[number]>("Cash in Hand");
   const [supportingDocuments, setSupportingDocuments] = useState<string[]>([]);
   const [companyFilter, setCompanyFilter] = useState("");
   const [selectedFilter, setSelectedFilter] = useState<VoucherEntry["category"] | "All">("All");
@@ -56,7 +58,13 @@ export function VoucherBook({ selectedCompany }: { selectedCompany: string }) {
   }, []);
 
   const filteredEntries = useMemo(
-    () => entries.filter((entry) => matchesCompanyFilter(entry.company, companyFilter) && (selectedFilter === "All" ? true : entry.category === selectedFilter) && isDateWithinRange(entry.date, fromDate, toDate)),
+    () =>
+      entries.filter(
+        (entry) =>
+          matchesCompanyFilter(entry.company, companyFilter) &&
+          (selectedFilter === "All" ? true : entry.category === selectedFilter) &&
+          isDateWithinRange(entry.date, fromDate, toDate),
+      ),
     [entries, companyFilter, selectedFilter, fromDate, toDate],
   );
 
@@ -76,6 +84,7 @@ export function VoucherBook({ selectedCompany }: { selectedCompany: string }) {
           payee,
           remarks,
           amount: Number(amount) || 0,
+          sourceAccount,
           supportingDocuments,
         }),
       });
@@ -93,6 +102,7 @@ export function VoucherBook({ selectedCompany }: { selectedCompany: string }) {
       setPayee("");
       setRemarks("");
       setAmount("0");
+      setSourceAccount("Cash in Hand");
       setSupportingDocuments([]);
     } catch {
       setStatusMessage("Unable to reach the voucher save endpoint.");
@@ -111,12 +121,13 @@ export function VoucherBook({ selectedCompany }: { selectedCompany: string }) {
           <label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Category</span><select value={category} onChange={(event) => setCategory(event.target.value as VoucherEntry["category"])} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]">{voucherCategories.map((item) => (<option key={item} value={item}>{item}</option>))}</select></label>
           <label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Payee</span><input value={payee} onChange={(event) => setPayee(event.target.value)} placeholder="Vendor or employee name" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label>
           <label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Amount</span><input value={amount} onChange={(event) => setAmount(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label>
+          <label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Source account</span><select value={sourceAccount} onChange={(event) => setSourceAccount(event.target.value as (typeof sourceAccounts)[number])} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]">{sourceAccounts.map((item) => (<option key={item} value={item}>{item}</option>))}</select></label>
           <label className="block space-y-2 xl:col-span-4"><span className="text-sm font-medium text-[var(--color-muted)]">Remarks</span><textarea value={remarks} onChange={(event) => setRemarks(event.target.value)} rows={3} placeholder="Reason for the voucher" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label>
         </div>
         <section className="mt-6 rounded-[24px] border border-[var(--color-border)] bg-white p-5"><div className="flex items-center gap-3 text-[var(--color-ink)]"><Paperclip className="h-4 w-4 text-[var(--color-accent)]" /><p className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--color-accent)]">Supporting Documents</p></div><input type="file" multiple onChange={(event) => setSupportingDocuments(Array.from(event.target.files ?? []).map((file) => file.name))} className="mt-4 block w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm text-[var(--color-muted)]" />{supportingDocuments.length ? <p className="mt-3 text-sm text-[var(--color-muted)]">{supportingDocuments.join(", ")}</p> : null}</section>
         <div className="mt-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div className="flex items-start gap-3 text-sm text-[var(--color-muted)]"><AlertCircle className="mt-1 h-4 w-4 text-[var(--color-accent)]" /><p className="max-w-3xl leading-7">{statusMessage}</p></div><button type="submit" disabled={isSaving} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-70"><Save className="h-4 w-4" />{isSaving ? "Saving..." : "Save Voucher"}</button></div>
       </form>
-      <section className="app-panel rounded-[30px] p-6 sm:p-8"><div className="grid gap-4 md:grid-cols-3"><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">From date</span><input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">To date</span><input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Company filter</span><select value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"><option value="">Filter by company</option>{companyOptions.map((company) => <option key={company.code} value={company.name}>{company.name}</option>)}</select></label></div><div className="mt-4 flex flex-wrap gap-2">{(["All", ...voucherCategories] as const).map((item) => (<button key={item} type="button" onClick={() => setSelectedFilter(item)} className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition ${selectedFilter === item ? "bg-[var(--color-sidebar)] text-white" : "border border-[var(--color-border)] bg-white text-[var(--color-muted)]"}`}>{item}</button>))}</div><div className="mt-6 grid gap-3">{filteredEntries.map((entry) => (<article key={entry.id} className="rounded-[24px] border border-[var(--color-border)] bg-white px-5 py-4"><div className="grid gap-3 lg:grid-cols-[0.12fr_0.18fr_0.2fr_0.18fr_0.12fr_0.2fr] lg:items-center"><Cell label="Date" value={entry.date} /><Cell label="Company" value={entry.company} /><Cell label="Category" value={entry.category} /><Cell label="Payee" value={entry.payee} /><Cell label="Amount" value={formatCurrency(entry.amount)} /><Cell label="Remarks" value={entry.remarks || "-"} /></div></article>))}</div></section>
+      <section className="app-panel rounded-[30px] p-6 sm:p-8"><div className="grid gap-4 md:grid-cols-3"><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">From date</span><input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">To date</span><input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label><label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Company filter</span><select value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"><option value="">Filter by company</option>{companyOptions.map((company) => <option key={company.code} value={company.name}>{company.name}</option>)}</select></label></div><div className="mt-4 flex flex-wrap gap-2">{(["All", ...voucherCategories] as const).map((item) => (<button key={item} type="button" onClick={() => setSelectedFilter(item)} className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition ${selectedFilter === item ? "bg-[var(--color-sidebar)] text-white" : "border border-[var(--color-border)] bg-white text-[var(--color-muted)]"}`}>{item}</button>))}</div><div className="mt-6 grid gap-3">{filteredEntries.map((entry) => (<article key={entry.id} className="rounded-[24px] border border-[var(--color-border)] bg-white px-5 py-4"><div className="grid gap-3 lg:grid-cols-[0.12fr_0.16fr_0.16fr_0.18fr_0.16fr_0.12fr_0.1fr] lg:items-center"><Cell label="Date" value={entry.date} /><Cell label="Company" value={entry.company} /><Cell label="Category" value={entry.category} /><Cell label="Payee" value={entry.payee} /><Cell label="Source account" value={entry.sourceAccount} /><Cell label="Amount" value={formatCurrency(entry.amount)} /><Cell label="Remarks" value={entry.remarks || "-"} /></div></article>))}</div></section>
     </div>
   );
 }

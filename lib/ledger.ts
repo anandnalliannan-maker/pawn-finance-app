@@ -21,6 +21,7 @@ export type LedgerEntry = {
   description: string;
   reference: string;
   amount: number;
+  sourceAccount: string;
 };
 
 export type VoucherCategory = Extract<
@@ -37,6 +38,7 @@ export type VoucherEntry = {
   remarks: string;
   amount: number;
   attachmentCount: number;
+  sourceAccount: string;
 };
 
 export const voucherCategories: VoucherCategory[] = [

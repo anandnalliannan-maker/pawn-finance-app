@@ -228,7 +228,7 @@ export function CashBookView() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="px-4 py-6 text-center text-sm text-[var(--color-muted)]">No ledger transactions available for this date.</td>
+                  <td colSpan={7} className="px-4 py-6 text-center text-sm text-[var(--color-muted)]">No ledger transactions available for this date.</td>
                 </tr>
               )}
             </tbody>
@@ -254,3 +254,4 @@ function MovementRow({ label, amount, description, incoming = false, highlight =
 
   return <div className={`rounded-[24px] border px-4 py-4 ${rowClass}`}><div className="flex items-center justify-between gap-4"><div><p className="text-sm font-semibold text-[var(--color-ink)]">{label}</p><p className="mt-1 text-sm text-[var(--color-muted)]">{description}</p></div><p className="text-base font-semibold text-[var(--color-ink)]">{formatCurrency(amount)}</p></div></div>;
 }
+

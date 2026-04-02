@@ -7,6 +7,7 @@ export type DepositPaymentRecord = {
   paymentUpto: string;
   principalPayment: number;
   interestPayment: number;
+  sourceAccount: string;
   notes?: string;
 };
 

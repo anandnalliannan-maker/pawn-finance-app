@@ -37,6 +37,7 @@ type DepositPaymentRow = {
   payment_upto: string;
   principal_payment: number | string;
   interest_payment: number | string;
+  payout_source_account: string | null;
   notes: string | null;
 };
 
@@ -56,6 +57,7 @@ function mapPayment(row: DepositPaymentRow): DepositPaymentRecord {
     paymentUpto: formatDisplayDate(new Date(`${row.payment_upto}T00:00:00`)),
     principalPayment: asNumber(row.principal_payment),
     interestPayment: asNumber(row.interest_payment),
+    sourceAccount: row.payout_source_account ?? "-",
     notes: row.notes ?? undefined,
   };
 }
@@ -106,7 +108,7 @@ export async function listDeposits(session: AppSession) {
   if (ids.length) {
     const { data: paymentsData, error: paymentsError } = await supabase
       .from("deposit_payments")
-      .select("id, deposit_id, payment_date, payment_from, payment_upto, principal_payment, interest_payment, notes")
+      .select("id, deposit_id, payment_date, payment_from, payment_upto, principal_payment, interest_payment, payout_source_account, notes")
       .in("deposit_id", ids)
       .order("payment_date", { ascending: true });
     if (paymentsError) throw new Error(paymentsError.message);
@@ -184,7 +186,7 @@ export async function createDeposit(session: AppSession, payload: CreateDepositP
   return getDepositDetailById(session, deposit.id as string);
 }
 
-export async function recordDepositPayment(session: AppSession, depositId: string, payload: { paymentDate: string; paymentFrom: string; paymentUpto: string; principalPayment: number; interestPayment: number; notes?: string }) {
+export async function recordDepositPayment(session: AppSession, depositId: string, payload: { paymentDate: string; paymentFrom: string; paymentUpto: string; principalPayment: number; interestPayment: number; sourceAccount: string; notes?: string }) {
   const supabase = getSupabaseServerClient();
   const { data: deposit, error: depositError } = await supabase
     .from("deposits")
@@ -202,6 +204,7 @@ export async function recordDepositPayment(session: AppSession, depositId: strin
     payment_upto: payload.paymentUpto,
     principal_payment: payload.principalPayment,
     interest_payment: payload.interestPayment,
+    payout_source_account: payload.sourceAccount,
     notes: payload.notes?.trim() || null,
     created_by: session.userId,
   }).select("id").single();
@@ -217,10 +220,12 @@ export async function recordDepositPayment(session: AppSession, depositId: strin
     amount: payload.principalPayment + payload.interestPayment,
     sourceType: "deposit_payout",
     sourceId: paymentRow.id as string,
+    sourceAccount: payload.sourceAccount,
     createdBy: session.userId,
     metadata: {
       principalPayment: payload.principalPayment,
       interestPayment: payload.interestPayment,
+      sourceAccount: payload.sourceAccount,
     },
   });
 

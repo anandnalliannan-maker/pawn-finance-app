@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { voucherCategories, type VoucherEntry } from "@/lib/ledger";
+import { isSourceAccount } from "@/lib/source-accounts";
 import { buildAuthErrorResponse, canAccessCompanyName, requireApiSession } from "@/lib/server/auth";
 import { listVoucherEntries } from "@/lib/server/ledger";
 import { createVoucher } from "@/lib/server/vouchers";
@@ -32,6 +33,7 @@ export async function POST(request: Request) {
       remarks?: string;
       amount?: number;
       supportingDocuments?: string[];
+      sourceAccount?: string;
     };
 
     if (!payload.companyName?.trim() || !payload.voucherDate || !payload.payee?.trim()) {
@@ -46,6 +48,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Voucher amount must be greater than zero." }, { status: 400 });
     }
 
+    if (!payload.sourceAccount?.trim() || !isSourceAccount(payload.sourceAccount)) {
+      return NextResponse.json({ error: "Select a valid source account for the expense." }, { status: 400 });
+    }
+
     if (!canAccessCompanyName(session, payload.companyName)) {
       return NextResponse.json({ error: "You do not have access to the selected company." }, { status: 403 });
     }
@@ -58,6 +64,7 @@ export async function POST(request: Request) {
       remarks: payload.remarks,
       amount: payload.amount,
       supportingDocuments: payload.supportingDocuments,
+      sourceAccount: payload.sourceAccount,
     });
 
     return NextResponse.json({ voucher, message: "Voucher saved successfully." }, { status: 201 });

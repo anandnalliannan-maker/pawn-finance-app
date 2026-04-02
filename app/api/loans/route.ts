@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import type { CreateLoanPayload } from "@/lib/loans";
+import { isSourceAccount } from "@/lib/source-accounts";
 import { buildAuthErrorResponse, canAccessCompanyName, requireApiSession } from "@/lib/server/auth";
 import { createLoan, listLoans } from "@/lib/server/loans";
 
@@ -49,6 +50,10 @@ export async function POST(request: Request) {
         { error: "Loan amount must be greater than zero." },
         { status: 400 },
       );
+    }
+
+    if (!payload.sourceAccount?.trim() || !isSourceAccount(payload.sourceAccount)) {
+      return NextResponse.json({ error: "Select a valid source account for the disbursal." }, { status: 400 });
     }
 
     const loan = await createLoan(session, payload);

@@ -38,6 +38,7 @@ type LoanRow = {
   interest_percent: number | string;
   original_loan_amount: number | string;
   supporting_document_paths: unknown;
+  disbursal_source_account: string | null;
   status: "active" | "closed";
   customers: CustomerRelation;
   companies: CompanyRelation;
@@ -142,6 +143,7 @@ function buildLoanRecord(base: LoanRow, payments: LoanPaymentRow[], jewelItems: 
     interestPercent: toNumber(base.interest_percent),
     originalLoanAmount: toNumber(base.original_loan_amount),
     supportingDocumentCount: toDocumentCount(base.supporting_document_paths),
+    sourceAccount: base.disbursal_source_account ?? "-",
     status: toLoanStatusLabel(base.status),
     jewelDetails: jewelItems.length
       ? jewelItems.map((item) => ({
@@ -376,6 +378,7 @@ export async function createLoan(session: AppSession, payload: CreateLoanPayload
       interest_percent: payload.interestPercent,
       original_loan_amount: payload.loanAmount,
       supporting_document_paths: payload.supportingDocuments ?? [],
+      disbursal_source_account: payload.sourceAccount,
       created_by: session.userId,
       updated_by: session.userId,
     })
@@ -414,10 +417,12 @@ export async function createLoan(session: AppSession, payload: CreateLoanPayload
     amount: payload.loanAmount,
     sourceType: "loan_disbursal",
     sourceId: insertedLoan.id as string,
+    sourceAccount: payload.sourceAccount,
     createdBy: session.userId,
     metadata: {
       loanType: payload.loanType,
       accountNumber,
+      sourceAccount: payload.sourceAccount,
     },
   });
 
@@ -539,6 +544,9 @@ export async function closeLoan(session: AppSession, loanId: string) {
 
   return getLoanDetailById(session, loanId);
 }
+
+
+
 
 
 

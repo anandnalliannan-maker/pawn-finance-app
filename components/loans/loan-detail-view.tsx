@@ -509,3 +509,4 @@ function ModeButton({ active, label, onClick }: { active: boolean; label: string
     </button>
   );
 }
+

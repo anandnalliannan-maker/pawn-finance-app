@@ -12,6 +12,7 @@ export type CreateVoucherPayload = {
   remarks?: string;
   amount: number;
   supportingDocuments?: string[];
+  sourceAccount: string;
 };
 
 function toVoucherCategoryValue(category: VoucherEntry["category"]) {
@@ -58,6 +59,7 @@ export async function createVoucher(session: AppSession, payload: CreateVoucherP
       payee: payload.payee.trim(),
       remarks: payload.remarks?.trim() || null,
       amount: payload.amount,
+      source_account: payload.sourceAccount,
       supporting_document_paths: payload.supportingDocuments ?? [],
       created_by: session.userId,
     })
@@ -78,6 +80,7 @@ export async function createVoucher(session: AppSession, payload: CreateVoucherP
     amount: payload.amount,
     sourceType: "voucher",
     sourceId: insertedVoucher.id as string,
+    sourceAccount: payload.sourceAccount,
     createdBy: session.userId,
     metadata: {
       voucherCategory: payload.category,
