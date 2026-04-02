@@ -1,10 +1,11 @@
-"use client";
+﻿"use client";
 
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
+  ArrowDownCircle,
   ArrowLeft,
   BookOpen,
   Building2,
@@ -33,20 +34,33 @@ type NavItem = { label: string; href?: string; icon: typeof LayoutDashboard; chi
 
 const navigation: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Customers", icon: UsersRound, children: [
+  {
+    label: "Customers",
+    icon: UsersRound,
+    children: [
       { label: "New Customer", href: "/customers/new", hotkey: "F2" },
       { label: "Search Customer", href: "/customers", hotkey: "F3" },
-    ] },
-  { label: "Loans", icon: HandCoins, children: [
+    ],
+  },
+  {
+    label: "Loans",
+    icon: HandCoins,
+    children: [
       { label: "Create New Loan", href: "/loans/new", hotkey: "F4" },
       { label: "Search Loan", href: "/loans/search", hotkey: "F5" },
       { label: "Schemes", href: "/schemes", hotkey: "F6" },
-    ] },
-  { label: "Deposits", icon: Landmark, children: [
+    ],
+  },
+  {
+    label: "Deposits",
+    icon: Landmark,
+    children: [
       { label: "Create Deposit", href: "/deposits/new", hotkey: "F7" },
       { label: "Search Deposit", href: "/deposits/search", hotkey: "F8" },
-    ] },
+    ],
+  },
   { label: "Adjustments", href: "/adjustments", icon: RotateCcw },
+  { label: "Funds In", href: "/funds-in", icon: ArrowDownCircle },
   { label: "Vouchers", href: "/vouchers", icon: FileText },
   { label: "Ledger", href: "/ledger", icon: BookOpen },
   { label: "Cash Book", href: "/cash-book", icon: CircleDollarSign },

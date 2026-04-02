@@ -1,4 +1,5 @@
-import {
+﻿import {
+  ArrowDownCircle,
   ArrowUpRight,
   BadgeIndianRupee,
   FileSpreadsheet,
@@ -14,7 +15,7 @@ const metrics = [
   { label: "Active Loans", value: "1,248", trend: "+8.4%", tone: "amber" as const },
   { label: "Interest Due Today", value: "94", trend: "12 urgent", tone: "slate" as const },
   { label: "Customers", value: "5,632", trend: "+124 this month", tone: "teal" as const },
-  { label: "Cash Position", value: "₹18.4L", trend: "Balanced", tone: "stone" as const },
+  { label: "Cash Position", value: "Rs 18.4L", trend: "Balanced", tone: "stone" as const },
 ];
 
 const actions = [
@@ -42,6 +43,12 @@ const actions = [
     icon: Search,
     hotkey: "Alt + S",
   },
+  {
+    title: "Funds In",
+    description: "Record owner capital, bank withdrawals, and other money brought into the business.",
+    icon: ArrowDownCircle,
+    hotkey: "Alt + F",
+  },
 ];
 
 export default function DashboardPage() {
@@ -60,7 +67,7 @@ export default function DashboardPage() {
             action lanes next, followed by loan issue and payment workflows.
           </p>
 
-          <div className="mt-8 grid gap-4 sm:grid-cols-2">
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {actions.map((action) => (
               <DashboardActionCard key={action.title} {...action} />
             ))}
@@ -114,4 +121,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
