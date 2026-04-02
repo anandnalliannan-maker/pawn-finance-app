@@ -1,7 +1,8 @@
 ﻿"use client";
 
+import Image from "next/image";
 import { useMemo, useState } from "react";
-import { Camera, Paperclip, Save } from "lucide-react";
+import { Camera, Paperclip, Save, X } from "lucide-react";
 
 import type { CreateCustomerPayload } from "@/lib/customers";
 import {
@@ -9,6 +10,15 @@ import {
   MAX_CUSTOMER_PHOTO_SIZE_BYTES,
   uploadSelectedFiles,
 } from "@/lib/uploads";
+
+type CustomerSummary = {
+  customerCode: string;
+  fullName: string;
+  phoneNumber: string;
+  company: string;
+  area: string;
+  aadhaarNumber: string;
+};
 
 type CustomerFormState = {
   fullName: string;
@@ -82,6 +92,7 @@ export function CustomerRegistrationForm({ selectedCompany }: { selectedCompany:
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState("");
   const [documentFiles, setDocumentFiles] = useState<File[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [summary, setSummary] = useState<CustomerSummary | null>(null);
   const [statusMessage, setStatusMessage] = useState(
     "Customer registration now supports photo and document attachments.",
   );
@@ -187,6 +198,9 @@ export function CustomerRegistrationForm({ selectedCompany }: { selectedCompany:
         return;
       }
 
+      if (result.customer) {
+        setSummary(result.customer as CustomerSummary);
+      }
       setFormState(initialState);
       setSameAsCurrentAddress(false);
       setPhotoFile(null);
@@ -201,7 +215,8 @@ export function CustomerRegistrationForm({ selectedCompany }: { selectedCompany:
   }
 
   return (
-    <form onSubmit={handleSubmit} className="app-panel rounded-[30px] p-6 sm:p-8">
+    <>
+      <form onSubmit={handleSubmit} className="app-panel rounded-[30px] p-6 sm:p-8">
       <div className="flex flex-col gap-4 border-b border-[var(--color-border)] pb-6 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[var(--color-accent)]">
@@ -218,7 +233,7 @@ export function CustomerRegistrationForm({ selectedCompany }: { selectedCompany:
           </div>
           <label className="group relative flex h-24 w-24 cursor-pointer items-center justify-center overflow-hidden rounded-2xl border border-dashed border-[var(--color-border)] bg-white text-[var(--color-accent)] transition hover:border-[var(--color-accent)] sm:h-28 sm:w-28">
             {photoPreviewUrl ? (
-              <img src={photoPreviewUrl} alt="Customer preview" className="h-full w-full object-cover" />
+              <Image src={photoPreviewUrl} alt="Customer preview" fill sizes="112px" className="object-cover" unoptimized />
             ) : (
               <Camera className="h-8 w-8 transition group-hover:scale-105" />
             )}
@@ -297,8 +312,16 @@ export function CustomerRegistrationForm({ selectedCompany }: { selectedCompany:
           {isSaving ? "Saving..." : "Save Customer  F2"}
         </button>
       </div>
-    </form>
+      </form>
+
+      {summary ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(26,24,20,0.46)] p-4"><div className="w-full max-w-xl rounded-[30px] border border-[var(--color-border)] bg-[var(--color-panel)] p-6 shadow-[0_32px_80px_rgba(26,24,20,0.22)] sm:p-8"><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">Customer Saved</p><h2 className="mt-2 text-2xl font-semibold text-[var(--color-ink)]">{summary.fullName}</h2><p className="mt-2 text-sm text-[var(--color-muted)]">This is a quick confirmation summary for staff reference.</p></div><button type="button" onClick={() => setSummary(null)} className="rounded-2xl border border-[var(--color-border)] bg-white p-3 text-[var(--color-muted)] transition hover:text-[var(--color-ink)]" aria-label="Close customer summary"><X className="h-4 w-4" /></button></div><div className="mt-6 grid gap-4 sm:grid-cols-2"><SummaryCard label="Customer ID" value={summary.customerCode} /><SummaryCard label="Phone" value={summary.phoneNumber} /><SummaryCard label="Company" value={summary.company} /><SummaryCard label="Area" value={summary.area} /><SummaryCard label="Aadhaar" value={summary.aadhaarNumber} className="sm:col-span-2" /></div><div className="mt-6 flex justify-end"><button type="button" onClick={() => setSummary(null)} className="rounded-2xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--color-accent-strong)]">Close</button></div></div></div> : null}
+    </>
   );
 }
 
+
+
+function SummaryCard({ label, value, className = "" }: { label: string; value: string; className?: string }) {
+  return <div className={`rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3 ${className}`}><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">{label}</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{value}</p></div>;
+}
 
