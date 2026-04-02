@@ -1,6 +1,4 @@
-﻿insert into storage.buckets (id, name, public)
-values ('app-attachments', 'app-attachments', false)
-on conflict (id) do nothing;
+﻿select storage.create_bucket('app-attachments', public => false);
 
 alter table public.customers
   add column if not exists id_proof_document_paths jsonb not null default '[]'::jsonb;
