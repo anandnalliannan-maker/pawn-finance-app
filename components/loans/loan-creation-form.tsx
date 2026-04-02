@@ -4,10 +4,17 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, Paperclip, Plus, Save, Search, Sparkles, Trash2, UserRound } from "lucide-react";
 
 import type { CustomerListItem } from "@/lib/customers";
-import { calculateSimpleInterestForRange, formatIsoDate, getDaysInMonth, parseAppDate, toDisplayDateFromIso } from "@/lib/date-utils";
+import {
+  calculateSimpleInterestForRange,
+  formatIsoDate,
+  getDaysInMonth,
+  parseAppDate,
+  toDisplayDateFromIso,
+} from "@/lib/date-utils";
 import type { CreateLoanPayload, LoanRecord } from "@/lib/loans";
 import { sourceAccounts } from "@/lib/source-accounts";
 import type { LoanScheme } from "@/lib/schemes";
+import { MAX_DOCUMENT_SIZE_BYTES, MAX_LOAN_ATTACHMENTS, uploadSelectedFiles } from "@/lib/uploads";
 
 type LoanCreationFormProps = {
   selectedCompany: string;
@@ -20,13 +27,16 @@ type JewelRow = {
   stoneWeight: string;
 };
 
-
 function getFinancialYearPrefix(value: string) {
   const date = parseAppDate(value);
   const year = date.getFullYear();
   const month = date.getMonth();
   const startYear = month >= 3 ? year : year - 1;
   return `${startYear}-${startYear + 1}`;
+}
+
+function getDefaultLoanType(companyName: string): "cash_loan" | "jewel_loan" {
+  return companyName === "Vishnu Bankers" ? "jewel_loan" : "cash_loan";
 }
 
 function buildHighestSequenceMap(numbers: string[]) {
@@ -78,6 +88,10 @@ function getInitials(name: string) {
     .join("");
 }
 
+function formatBytesLabel(value: number) {
+  return `${Math.round(value / 1024)} KB`;
+}
+
 export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
   const [customers, setCustomers] = useState<CustomerListItem[]>([]);
   const [existingLoans, setExistingLoans] = useState<LoanRecord[]>([]);
@@ -85,7 +99,7 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
   const [searchPhone, setSearchPhone] = useState("");
   const [searchCustomerCode, setSearchCustomerCode] = useState("");
   const [loanDate, setLoanDate] = useState(formatIsoDate(new Date()));
-  const [loanType, setLoanType] = useState<"cash_loan" | "jewel_loan">("cash_loan");
+  const [loanType, setLoanType] = useState<"cash_loan" | "jewel_loan">(getDefaultLoanType(selectedCompany));
   const [loanAmount, setLoanAmount] = useState("50000");
   const [scheme, setScheme] = useState("");
   const [interestPercent, setInterestPercent] = useState("1.00");
@@ -97,8 +111,13 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
   const [accountWasEdited, setAccountWasEdited] = useState(false);
   const [jewelRows, setJewelRows] = useState<JewelRow[]>([buildJewelRow(1)]);
   const [supportingDocuments, setSupportingDocuments] = useState<string[]>([]);
+  const [supportingDocumentFiles, setSupportingDocumentFiles] = useState<File[]>([]);
   const [sourceAccount, setSourceAccount] = useState<(typeof sourceAccounts)[number]>("Cash in Hand");
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    setLoanType(getDefaultLoanType(selectedCompany));
+  }, [selectedCompany]);
 
   useEffect(() => {
     let isMounted = true;
@@ -177,10 +196,7 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
   const financialYearPrefix = getFinancialYearPrefix(loanDate);
   const generatedAccountNumber = `${financialYearPrefix}/${(sequenceMap[financialYearPrefix] ?? 0) + 1}`;
   const currentAccountNumber = accountWasEdited ? accountNumberInput : generatedAccountNumber;
-  const existingLoanNumbers = useMemo(
-    () => existingLoans.map((loan) => loan.accountNumber),
-    [existingLoans],
-  );
+  const existingLoanNumbers = useMemo(() => existingLoans.map((loan) => loan.accountNumber), [existingLoans]);
 
   const nextAutoSequence = useMemo(() => {
     const currentSequence = getSequenceFromAccountNumber(currentAccountNumber, financialYearPrefix) ?? 0;
@@ -240,6 +256,23 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
     }
   }
 
+  function handleDocumentSelection(files: File[]) {
+    if (files.length > MAX_LOAN_ATTACHMENTS) {
+      setStatusMessage(`Only ${MAX_LOAN_ATTACHMENTS} attachments are allowed for a loan.`);
+      return;
+    }
+
+    const invalidFile = files.find((file) => file.size > MAX_DOCUMENT_SIZE_BYTES);
+    if (invalidFile) {
+      setStatusMessage(`Each document must be ${formatBytesLabel(MAX_DOCUMENT_SIZE_BYTES)} or smaller.`);
+      return;
+    }
+
+    setSupportingDocumentFiles(files);
+    setSupportingDocuments(files.map((file) => file.name));
+    setStatusMessage(files.length ? "Loan attachments selected." : "Loan form is connected to Supabase. Customer lookup, scheme lookup, and loan save are live.");
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -258,30 +291,34 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
     setIsSaving(true);
     setStatusMessage("Saving loan to Supabase...");
 
-    const payload: CreateLoanPayload = {
-      companyName: selectedCompany,
-      customerId: selectedCustomer.id,
-      accountNumber: currentAccountNumber,
-      loanDate,
-      loanType,
-      loanAmount: Number(loanAmount) || 0,
-      schemeName: availableSchemes.find((item) => item.id === scheme)?.name || undefined,
-      interestPercent: Number(interestPercent) || 0,
-      sourceAccount,
-      supportingDocuments,
-      jewelItems:
-        loanType === "jewel_loan"
-          ? jewelRows
-              .filter((row) => row.jewelType.trim())
-              .map((row) => ({
-                jewelType: row.jewelType.trim(),
-                jewelWeight: Number(row.jewelWeight) || 0,
-                stoneWeight: Number(row.stoneWeight) || 0,
-              }))
-          : [],
-    };
-
     try {
+      const uploadedDocumentPaths = supportingDocumentFiles.length
+        ? await uploadSelectedFiles("loan-document", selectedCompany, supportingDocumentFiles)
+        : [];
+
+      const payload: CreateLoanPayload = {
+        companyName: selectedCompany,
+        customerId: selectedCustomer.id,
+        accountNumber: currentAccountNumber,
+        loanDate,
+        loanType,
+        loanAmount: Number(loanAmount) || 0,
+        schemeName: availableSchemes.find((item) => item.id === scheme)?.name || undefined,
+        interestPercent: Number(interestPercent) || 0,
+        sourceAccount,
+        supportingDocuments: uploadedDocumentPaths,
+        jewelItems:
+          loanType === "jewel_loan"
+            ? jewelRows
+                .filter((row) => row.jewelType.trim())
+                .map((row) => ({
+                  jewelType: row.jewelType.trim(),
+                  jewelWeight: Number(row.jewelWeight) || 0,
+                  stoneWeight: Number(row.stoneWeight) || 0,
+                }))
+            : [],
+      };
+
       const response = await fetch("/api/loans", {
         method: "POST",
         headers: {
@@ -309,7 +346,7 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
         }
       }
 
-      setLoanType("cash_loan");
+      setLoanType(getDefaultLoanType(selectedCompany));
       setLoanAmount("50000");
       setScheme("");
       setInterestPercent("1.00");
@@ -318,19 +355,18 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
       setAccountError("");
       setJewelRows([buildJewelRow(1)]);
       setSupportingDocuments([]);
+      setSupportingDocumentFiles([]);
       setSourceAccount("Cash in Hand");
       setStatusMessage(result.message ?? "Loan saved successfully.");
-    } catch {
-      setStatusMessage("Unable to reach the loan save endpoint.");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Unable to reach the loan save endpoint.");
     } finally {
       setIsSaving(false);
     }
   }
 
   function addJewelRow() {
-    setJewelRows((current) =>
-      current.length >= 5 ? current : [...current, buildJewelRow(current.length + 1)],
-    );
+    setJewelRows((current) => (current.length >= 5 ? current : [...current, buildJewelRow(current.length + 1)]));
   }
 
   function removeJewelRow(id: number) {
@@ -338,9 +374,7 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
   }
 
   function updateJewelRow(id: number, field: keyof JewelRow, value: string) {
-    setJewelRows((current) =>
-      current.map((row) => (row.id === id ? { ...row, [field]: value } : row)),
-    );
+    setJewelRows((current) => current.map((row) => (row.id === id ? { ...row, [field]: value } : row)));
   }
 
   return (
@@ -358,8 +392,14 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
 
         <div className="mt-6 grid gap-5 xl:grid-cols-[0.24fr_0.76fr]">
           <div className="rounded-[28px] border border-[var(--color-border)] bg-white p-5 text-center">
-            <div className="mx-auto flex h-28 w-28 items-center justify-center rounded-[24px] bg-[var(--color-panel-strong)] text-2xl font-semibold text-[var(--color-accent-strong)]">
-              {selectedCustomer ? getInitials(selectedCustomer.fullName) : <UserRound className="h-10 w-10" />}
+            <div className="mx-auto flex h-28 w-28 items-center justify-center overflow-hidden rounded-[24px] bg-[var(--color-panel-strong)] text-2xl font-semibold text-[var(--color-accent-strong)]">
+              {selectedCustomer?.profilePhotoUrl ? (
+                <img src={selectedCustomer.profilePhotoUrl} alt={selectedCustomer.fullName} className="h-full w-full object-cover" />
+              ) : selectedCustomer ? (
+                getInitials(selectedCustomer.fullName)
+              ) : (
+                <UserRound className="h-10 w-10" />
+              )}
             </div>
             <p className="mt-4 text-sm font-semibold text-[var(--color-ink)]">Customer Photo</p>
           </div>
@@ -442,7 +482,8 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
 
       <section className="app-panel rounded-[30px] p-6 sm:p-8">
         <div className="flex items-center gap-3 text-[var(--color-ink)]"><Paperclip className="h-4 w-4 text-[var(--color-accent)]" /><p className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--color-accent)]">Supporting Documents</p></div>
-        <input type="file" multiple onChange={(event) => setSupportingDocuments(Array.from(event.target.files ?? []).map((file) => file.name))} className="mt-4 block w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm text-[var(--color-muted)]" />
+        <input type="file" multiple accept="image/*,.pdf" onChange={(event) => handleDocumentSelection(Array.from(event.target.files ?? []))} className="mt-4 block w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm text-[var(--color-muted)]" />
+        <p className="mt-3 text-xs text-[var(--color-muted)]">Maximum 3 files. Each file must be 500 KB or smaller.</p>
         {supportingDocuments.length ? <p className="mt-3 text-sm text-[var(--color-muted)]">{supportingDocuments.join(", ")}</p> : null}
       </section>
 
@@ -455,11 +496,5 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
     </form>
   );
 }
-
-
-
-
-
-
 
 

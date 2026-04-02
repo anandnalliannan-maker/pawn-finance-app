@@ -1,9 +1,14 @@
 ﻿"use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Camera, Paperclip, Save } from "lucide-react";
 
 import type { CreateCustomerPayload } from "@/lib/customers";
+import {
+  MAX_DOCUMENT_SIZE_BYTES,
+  MAX_CUSTOMER_PHOTO_SIZE_BYTES,
+  uploadSelectedFiles,
+} from "@/lib/uploads";
 
 type CustomerFormState = {
   fullName: string;
@@ -66,13 +71,22 @@ function FormField({ label, name, value, onChange, placeholder, textarea = false
   );
 }
 
+function formatBytesLabel(value: number) {
+  return `${Math.round(value / 1024)} KB`;
+}
+
 export function CustomerRegistrationForm({ selectedCompany }: { selectedCompany: string }) {
   const [formState, setFormState] = useState(initialState);
   const [sameAsCurrentAddress, setSameAsCurrentAddress] = useState(false);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState("");
+  const [documentFiles, setDocumentFiles] = useState<File[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState(
-    "Customer form is connected to the server save path. Photo and document storage wiring is the next backend step.",
+    "Customer registration now supports photo and document attachments.",
   );
+
+  const documentNames = useMemo(() => documentFiles.map((file) => file.name).join(", "), [documentFiles]);
 
   function handleChange(name: keyof CustomerFormState, value: string) {
     setFormState((current) => {
@@ -97,27 +111,67 @@ export function CustomerRegistrationForm({ selectedCompany }: { selectedCompany:
     }));
   }
 
+  function handlePhotoChange(file: File | null) {
+    if (!file) {
+      setPhotoFile(null);
+      setPhotoPreviewUrl("");
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      setStatusMessage("Customer photo must be an image file.");
+      return;
+    }
+
+    if (file.size > MAX_CUSTOMER_PHOTO_SIZE_BYTES) {
+      setStatusMessage(`Customer photo must be ${formatBytesLabel(MAX_CUSTOMER_PHOTO_SIZE_BYTES)} or smaller.`);
+      return;
+    }
+
+    setPhotoFile(file);
+    setPhotoPreviewUrl(URL.createObjectURL(file));
+    setStatusMessage("Customer photo selected.");
+  }
+
+  function handleDocumentChange(files: File[]) {
+    const invalidFile = files.find((file) => file.size > MAX_DOCUMENT_SIZE_BYTES);
+    if (invalidFile) {
+      setStatusMessage(`Each ID proof must be ${formatBytesLabel(MAX_DOCUMENT_SIZE_BYTES)} or smaller.`);
+      return;
+    }
+
+    setDocumentFiles(files);
+    setStatusMessage(files.length ? "ID proof documents selected." : "Customer registration now supports photo and document attachments.");
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsSaving(true);
     setStatusMessage("Saving customer to Supabase...");
 
-    const payload: CreateCustomerPayload = {
-      companyName: selectedCompany,
-      fullName: formState.fullName,
-      phoneNumber: formState.phoneNumber,
-      alternatePhoneNumber: formState.alternatePhoneNumber,
-      currentAddress: formState.currentAddress,
-      permanentAddress: formState.permanentAddress,
-      aadhaarNumber: formState.aadhaarNumber,
-      guardianLabel: formState.guardianLabel,
-      guardianName: formState.guardianName,
-      area: formState.area,
-      referenceName: formState.referenceName,
-      remarks: formState.remarks,
-    };
-
     try {
+      const [profilePhotoPath, documentPaths] = await Promise.all([
+        photoFile ? uploadSelectedFiles("customer-photo", selectedCompany, [photoFile]).then((paths) => paths[0] ?? "") : Promise.resolve(""),
+        documentFiles.length ? uploadSelectedFiles("customer-document", selectedCompany, documentFiles) : Promise.resolve([] as string[]),
+      ]);
+
+      const payload: CreateCustomerPayload = {
+        companyName: selectedCompany,
+        fullName: formState.fullName,
+        phoneNumber: formState.phoneNumber,
+        alternatePhoneNumber: formState.alternatePhoneNumber,
+        currentAddress: formState.currentAddress,
+        permanentAddress: formState.permanentAddress,
+        aadhaarNumber: formState.aadhaarNumber,
+        guardianLabel: formState.guardianLabel,
+        guardianName: formState.guardianName,
+        area: formState.area,
+        referenceName: formState.referenceName,
+        remarks: formState.remarks,
+        profilePhotoPath: profilePhotoPath || undefined,
+        documentPaths,
+      };
+
       const response = await fetch("/api/customers", {
         method: "POST",
         headers: {
@@ -135,9 +189,12 @@ export function CustomerRegistrationForm({ selectedCompany }: { selectedCompany:
 
       setFormState(initialState);
       setSameAsCurrentAddress(false);
+      setPhotoFile(null);
+      setPhotoPreviewUrl("");
+      setDocumentFiles([]);
       setStatusMessage(result.message ?? "Customer saved successfully.");
-    } catch {
-      setStatusMessage("Unable to reach the customer save endpoint.");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Unable to reach the customer save endpoint.");
     } finally {
       setIsSaving(false);
     }
@@ -159,9 +216,19 @@ export function CustomerRegistrationForm({ selectedCompany }: { selectedCompany:
           <div className="rounded-2xl bg-[var(--color-panel-strong)] px-4 py-3 text-sm text-[var(--color-muted)]">
             Customer ID: Auto
           </div>
-          <div className="flex h-20 w-20 items-center justify-center rounded-2xl border border-dashed border-[var(--color-border)] bg-white text-[var(--color-accent)]">
-            <Camera className="h-7 w-7" />
-          </div>
+          <label className="group relative flex h-24 w-24 cursor-pointer items-center justify-center overflow-hidden rounded-2xl border border-dashed border-[var(--color-border)] bg-white text-[var(--color-accent)] transition hover:border-[var(--color-accent)] sm:h-28 sm:w-28">
+            {photoPreviewUrl ? (
+              <img src={photoPreviewUrl} alt="Customer preview" className="h-full w-full object-cover" />
+            ) : (
+              <Camera className="h-8 w-8 transition group-hover:scale-105" />
+            )}
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(event) => handlePhotoChange(event.target.files?.[0] ?? null)}
+              className="hidden"
+            />
+          </label>
         </div>
       </div>
 
@@ -210,7 +277,15 @@ export function CustomerRegistrationForm({ selectedCompany }: { selectedCompany:
             <Paperclip className="h-4 w-4 text-[var(--color-accent)]" />
             <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--color-accent)]">ID Proof Attachment</p>
           </div>
-          <input type="file" className="mt-4 block w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-page)] px-4 py-3 text-sm text-[var(--color-muted)]" />
+          <input
+            type="file"
+            multiple
+            accept="image/*,.pdf"
+            onChange={(event) => handleDocumentChange(Array.from(event.target.files ?? []))}
+            className="mt-4 block w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-page)] px-4 py-3 text-sm text-[var(--color-muted)]"
+          />
+          <p className="mt-3 text-xs text-[var(--color-muted)]">Each file must be 500 KB or smaller.</p>
+          {documentNames ? <p className="mt-3 text-sm text-[var(--color-muted)]">{documentNames}</p> : null}
         </section>
       </div>
 
@@ -225,3 +300,5 @@ export function CustomerRegistrationForm({ selectedCompany }: { selectedCompany:
     </form>
   );
 }
+
+

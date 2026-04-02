@@ -1,4 +1,4 @@
-export type CustomerListItem = {
+﻿export type CustomerListItem = {
   id: string;
   customerCode: string;
   fullName: string;
@@ -8,6 +8,7 @@ export type CustomerListItem = {
   aadhaarNumber?: string;
   area: string;
   profilePhotoPath?: string | null;
+  profilePhotoUrl?: string | null;
   company: string;
   status: string;
 };
@@ -25,6 +26,8 @@ export type CreateCustomerPayload = {
   area?: string;
   referenceName?: string;
   remarks?: string;
+  profilePhotoPath?: string;
+  documentPaths?: string[];
 };
 
 export function normalizePhoneNumber(value: string) {

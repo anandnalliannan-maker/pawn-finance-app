@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 
 import {
   buildCustomerStatus,
@@ -7,6 +7,7 @@ import {
   type CreateCustomerPayload,
 } from "@/lib/customers";
 import { buildAuthErrorResponse, canAccessCompanyName, requireApiSession } from "@/lib/server/auth";
+import { getSignedAttachmentUrl } from "@/lib/server/storage";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -76,22 +77,25 @@ export async function GET() {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    const customers = ((data ?? []) as CustomerSelectRow[]).map((row) => ({
-      id: row.id,
-      customerCode: row.customer_code,
-      fullName: row.full_name,
-      phoneNumber: row.phone_number,
-      currentAddress: row.current_address ?? "-",
-      permanentAddress: row.permanent_address ?? "-",
-      area: row.area ?? "-",
-      aadhaarNumber: row.aadhaar_number ?? "-",
-      profilePhotoPath: row.profile_photo_path,
-      company: getCompanyName(row.companies),
-      status: buildCustomerStatus({
+    const customers = await Promise.all(
+      ((data ?? []) as CustomerSelectRow[]).map(async (row) => ({
+        id: row.id,
+        customerCode: row.customer_code,
+        fullName: row.full_name,
+        phoneNumber: row.phone_number,
+        currentAddress: row.current_address ?? "-",
+        permanentAddress: row.permanent_address ?? "-",
+        area: row.area ?? "-",
+        aadhaarNumber: row.aadhaar_number ?? "-",
         profilePhotoPath: row.profile_photo_path,
-        aadhaarNumber: row.aadhaar_number,
-      }),
-    }));
+        profilePhotoUrl: await getSignedAttachmentUrl(row.profile_photo_path),
+        company: getCompanyName(row.companies),
+        status: buildCustomerStatus({
+          profilePhotoPath: row.profile_photo_path,
+          aadhaarNumber: row.aadhaar_number,
+        }),
+      })),
+    );
 
     return NextResponse.json({ customers });
   } catch (error) {
@@ -190,6 +194,8 @@ export async function POST(request: Request) {
       area: payload.area?.trim() || null,
       reference_name: payload.referenceName?.trim() || null,
       remarks: payload.remarks?.trim() || null,
+      profile_photo_path: payload.profilePhotoPath?.trim() || null,
+      id_proof_document_paths: payload.documentPaths ?? [],
       created_by: session.userId,
       updated_by: session.userId,
     };
@@ -242,6 +248,7 @@ export async function POST(request: Request) {
           area: customer.area ?? "-",
           aadhaarNumber: customer.aadhaar_number ?? "-",
           profilePhotoPath: customer.profile_photo_path,
+          profilePhotoUrl: await getSignedAttachmentUrl(customer.profile_photo_path),
           company: getCompanyName(customer.companies),
           status: buildCustomerStatus({
             profilePhotoPath: customer.profile_photo_path,

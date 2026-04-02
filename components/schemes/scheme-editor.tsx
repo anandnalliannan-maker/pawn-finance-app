@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Save, Trash2 } from "lucide-react";
@@ -7,7 +7,7 @@ import type { LoanScheme, SaveLoanSchemePayload, SchemeSlab } from "@/lib/scheme
 
 const MAX_SCHEMES = 6;
 const MAX_ROWS = 10;
-const DEFAULT_COMPANY = "Vishnu Bankers - Main Branch";
+const DEFAULT_COMPANY = "Vishnu Bankers";
 
 function buildEmptySlab(id: number): SchemeSlab {
   return {
@@ -165,3 +165,4 @@ export function SchemeEditor() {
     </section>
   );
 }
+

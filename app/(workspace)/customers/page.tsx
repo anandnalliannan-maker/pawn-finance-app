@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { Camera, History, Search, ShieldCheck, UserPlus, UsersRound } from "lucide-react";
 
 import { CustomerListPreview } from "@/components/customers/customer-list-preview";
@@ -7,7 +7,7 @@ export default async function CustomersPage({
   searchParams,
 }: PageProps<"/customers">) {
   const params = await searchParams;
-  const company = typeof params.company === "string" ? params.company : "Vishnu Bankers - Main Branch";
+  const company = typeof params.company === "string" ? params.company : "Vishnu Bankers";
   const companyQuery = `?company=${encodeURIComponent(company)}`;
 
   return (
