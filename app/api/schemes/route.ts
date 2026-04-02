@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 
 import type { SaveLoanSchemePayload } from "@/lib/schemes";
 import { buildAuthErrorResponse, canAccessCompanyName, requireApiSession } from "@/lib/server/auth";
@@ -8,12 +8,9 @@ export const runtime = "nodejs";
 
 export async function GET() {
   try {
-    const session = await requireApiSession();
+    await requireApiSession();
     const schemes = await listLoanSchemes();
-    const visibleSchemes = session.role === "admin"
-      ? schemes
-      : schemes.filter((scheme) => session.companies.some((company) => company.name === scheme.company));
-    return NextResponse.json({ schemes: visibleSchemes });
+    return NextResponse.json({ schemes });
   } catch (error) {
     const authResponse = buildAuthErrorResponse(error);
     if (authResponse) return authResponse;

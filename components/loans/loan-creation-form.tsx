@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, Paperclip, Plus, Save, Search, Sparkles, Trash2, UserRound } from "lucide-react";
@@ -139,7 +139,7 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
         const nextSchemes = (schemeResult.schemes ?? []) as LoanScheme[];
         setCustomers(nextCustomers);
         setExistingLoans(nextLoans);
-        setAvailableSchemes(nextSchemes.filter((item) => item.company === selectedCompany));
+        setAvailableSchemes(nextSchemes);
         setSequenceMap(buildHighestSequenceMap(nextLoans.map((loan) => loan.accountNumber)));
         setSearchName(nextCustomers[0]?.fullName ?? "");
         setStatusMessage("Loan form is connected to Supabase. Customer lookup, scheme lookup, and loan save are live.");
@@ -455,6 +455,7 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
     </form>
   );
 }
+
 
 
 
