@@ -1,4 +1,6 @@
 ﻿import { formatDisplayDate, parseAppDate } from "@/lib/date-utils";
+import { getFinancialYearPrefix, parseLoanAccountNumber } from "@/lib/loan-account-number";
+import { getLoanPrefixByCompanyName } from "@/lib/companies";
 import type { CreateLoanPayload, LoanPaymentRecord, LoanRecord } from "@/lib/loans";
 import { canAccessCompanyId, type AppSession } from "@/lib/server/auth";
 import { postLedgerEntry } from "@/lib/server/ledger";
@@ -158,28 +160,6 @@ function buildLoanRecord(base: LoanRow, payments: LoanPaymentRow[], jewelItems: 
   };
 }
 
-function parseAccountNumber(accountNumber: string) {
-  const match = accountNumber.trim().match(/^(\d{4})-(\d{4})\/(\d+)$/);
-
-  if (!match) {
-    return null;
-  }
-
-  const startYear = Number(match[1]);
-  const endYear = Number(match[2]);
-  const sequence = Number(match[3]);
-
-  if (!Number.isFinite(startYear) || !Number.isFinite(endYear) || !Number.isFinite(sequence) || endYear !== startYear + 1) {
-    return null;
-  }
-
-  return {
-    financialYearStart: startYear,
-    financialYearLabel: `${startYear}-${endYear}`,
-    sequence,
-  };
-}
-
 async function fetchLoanRows(session: AppSession) {
   const supabase = getSupabaseServerClient();
   let query = supabase
@@ -307,10 +287,10 @@ export async function createLoan(session: AppSession, payload: CreateLoanPayload
   const supabase = getSupabaseServerClient();
   const companyName = payload.companyName.trim();
   const accountNumber = payload.accountNumber.trim();
-  const parsedAccount = parseAccountNumber(accountNumber);
+  const parsedAccount = parseLoanAccountNumber(accountNumber);
 
   if (!parsedAccount) {
-    throw new Error("Account number must follow the format YYYY-YYYY/sequence.");
+    throw new Error("Account number must follow the format YYYY-YYYY/COMPANYPREFIX-sequence.");
   }
 
   const { data: company, error: companyError } = await supabase
@@ -329,6 +309,17 @@ export async function createLoan(session: AppSession, payload: CreateLoanPayload
 
   if (!canAccessCompanyId(session, company.id as string)) {
     throw new Error("You do not have access to the selected company.");
+  }
+
+  const expectedFinancialYear = getFinancialYearPrefix(payload.loanDate);
+  const expectedCompanyPrefix = getLoanPrefixByCompanyName(company.name as string);
+
+  if (parsedAccount.financialYearLabel !== expectedFinancialYear) {
+    throw new Error("Account number financial year must match the selected loan date.");
+  }
+
+  if (parsedAccount.companyPrefix !== expectedCompanyPrefix) {
+    throw new Error(`Account number prefix must be ${expectedCompanyPrefix} for ${company.name}.`);
   }
 
   const { data: customer, error: customerError } = await supabase

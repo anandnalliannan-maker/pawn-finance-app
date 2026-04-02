@@ -13,6 +13,12 @@ import {
   toDisplayDateFromIso,
 } from "@/lib/date-utils";
 import type { CreateLoanPayload, LoanRecord } from "@/lib/loans";
+import {
+  buildHighestSequenceMap,
+  buildLoanAccountNumber,
+  getLoanAccountSeriesPrefix,
+  getSequenceFromAccountNumber,
+} from "@/lib/loan-account-number";
 import { sourceAccounts } from "@/lib/source-accounts";
 import { calculateSchemeInterestForRange, resolveSchemeInterestPercent, type LoanScheme } from "@/lib/schemes";
 import { MAX_DOCUMENT_SIZE_BYTES, MAX_LOAN_ATTACHMENTS, uploadSelectedFiles } from "@/lib/uploads";
@@ -28,37 +34,8 @@ type JewelRow = {
   stoneWeight: string;
 };
 
-function getFinancialYearPrefix(value: string) {
-  const date = parseAppDate(value);
-  const year = date.getFullYear();
-  const month = date.getMonth();
-  const startYear = month >= 3 ? year : year - 1;
-  return `${startYear}-${startYear + 1}`;
-}
-
 function getDefaultLoanType(companyName: string): "cash_loan" | "jewel_loan" {
   return companyName === "Vishnu Bankers" ? "jewel_loan" : "cash_loan";
-}
-
-function buildHighestSequenceMap(numbers: string[]) {
-  return numbers.reduce<Record<string, number>>((acc, entry) => {
-    const [prefix, sequence] = entry.split("/");
-    const parsed = Number(sequence);
-    if (prefix && Number.isFinite(parsed)) {
-      acc[prefix] = Math.max(acc[prefix] ?? 0, parsed);
-    }
-    return acc;
-  }, {});
-}
-
-function getSequenceFromAccountNumber(value: string, prefix: string) {
-  const [accountPrefix, sequence] = value.split("/");
-  if (accountPrefix !== prefix) {
-    return null;
-  }
-
-  const parsed = Number(sequence);
-  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function buildJewelRow(id: number): JewelRow {
@@ -194,16 +171,16 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
 
   const selectedScheme = useMemo(() => availableSchemes.find((item) => item.id === scheme) ?? null, [availableSchemes, scheme]);
 
-  const financialYearPrefix = getFinancialYearPrefix(loanDate);
-  const generatedAccountNumber = `${financialYearPrefix}/${(sequenceMap[financialYearPrefix] ?? 0) + 1}`;
+  const accountSeriesPrefix = getLoanAccountSeriesPrefix(selectedCompany, loanDate);
+  const generatedAccountNumber = buildLoanAccountNumber(selectedCompany, loanDate, (sequenceMap[accountSeriesPrefix] ?? 0) + 1);
   const currentAccountNumber = accountWasEdited ? accountNumberInput : generatedAccountNumber;
   const existingLoanNumbers = useMemo(() => existingLoans.map((loan) => loan.accountNumber), [existingLoans]);
 
   const nextAutoSequence = useMemo(() => {
-    const currentSequence = getSequenceFromAccountNumber(currentAccountNumber, financialYearPrefix) ?? 0;
-    const highestExisting = sequenceMap[financialYearPrefix] ?? 0;
+    const currentSequence = getSequenceFromAccountNumber(currentAccountNumber, accountSeriesPrefix) ?? 0;
+    const highestExisting = sequenceMap[accountSeriesPrefix] ?? 0;
     return Math.max(currentSequence, highestExisting) + 1;
-  }, [currentAccountNumber, financialYearPrefix, sequenceMap]);
+  }, [accountSeriesPrefix, currentAccountNumber, sequenceMap]);
 
   const daysInSelectedMonth = useMemo(() => getDaysInMonth(loanDate), [loanDate]);
   const schemeBasedInterestPercent = useMemo(
@@ -237,9 +214,8 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
   const yearlyInterest = useMemo(() => monthlyInterest * 12, [monthlyInterest]);
 
   function handleAccountNumberChange(value: string) {
-    const rawSequence = value.includes("/") ? value.split("/").slice(1).join("/") : value;
-    const digitsOnly = rawSequence.replace(/[^0-9]/g, "");
-    const normalized = digitsOnly ? `${financialYearPrefix}/${digitsOnly}` : `${financialYearPrefix}/`;
+    const digitsOnly = value.replace(/[^0-9]/g, "");
+    const normalized = digitsOnly ? `${accountSeriesPrefix}-${digitsOnly}` : `${accountSeriesPrefix}-`;
 
     setAccountWasEdited(true);
     setAccountNumberInput(normalized);
@@ -346,11 +322,11 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
       const savedLoan = result.loan as LoanRecord | null;
       if (savedLoan) {
         setExistingLoans((current) => [savedLoan, ...current]);
-        const editedSequence = getSequenceFromAccountNumber(savedLoan.accountNumber, financialYearPrefix);
+        const editedSequence = getSequenceFromAccountNumber(savedLoan.accountNumber, accountSeriesPrefix);
         if (editedSequence) {
           setSequenceMap((current) => ({
             ...current,
-            [financialYearPrefix]: Math.max(current[financialYearPrefix] ?? 0, editedSequence),
+            [accountSeriesPrefix]: Math.max(current[accountSeriesPrefix] ?? 0, editedSequence),
           }));
         }
       }
@@ -451,7 +427,7 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
             <span className="text-sm font-medium text-[var(--color-muted)]">Acc no.</span>
             <input value={currentAccountNumber} onChange={(event) => handleAccountNumberChange(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" />
             <p className="text-xs text-[var(--color-muted)]">Financial year prefix is fixed automatically from the selected date.</p>
-            {accountError ? <p className="text-sm text-red-600">{accountError}</p> : <p className="text-xs text-[var(--color-muted)]">Next auto number: {financialYearPrefix}/{nextAutoSequence}</p>}
+            {accountError ? <p className="text-sm text-red-600">{accountError}</p> : <p className="text-xs text-[var(--color-muted)]">Next auto number: {`${accountSeriesPrefix}-${nextAutoSequence}`}</p>}
           </label>
 
           <label className="block space-y-2">
