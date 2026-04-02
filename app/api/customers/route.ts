@@ -44,9 +44,9 @@ function getCompanyName(companies: CompanyRelation) {
 
 export async function GET() {
   try {
-    const session = await requireApiSession();
+    await requireApiSession();
     const supabase = getSupabaseServerClient();
-    let query = supabase
+    const { data, error } = await supabase
       .from("customers")
       .select(`
         id,
@@ -63,15 +63,6 @@ export async function GET() {
       `)
       .order("created_at", { ascending: false })
       .limit(250);
-
-    if (session.role !== "admin") {
-      if (!session.companies.length) {
-        return NextResponse.json({ customers: [] });
-      }
-      query = query.in("company_id", session.companies.map((company) => company.id));
-    }
-
-    const { data, error } = await query;
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });

@@ -1,4 +1,5 @@
-﻿"use client";
+﻿/* eslint-disable @next/next/no-img-element */
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, Paperclip, Plus, Save, Search, Sparkles, Trash2, UserRound } from "lucide-react";
@@ -13,7 +14,7 @@ import {
 } from "@/lib/date-utils";
 import type { CreateLoanPayload, LoanRecord } from "@/lib/loans";
 import { sourceAccounts } from "@/lib/source-accounts";
-import type { LoanScheme } from "@/lib/schemes";
+import { calculateSchemeInterestForRange, resolveSchemeInterestPercent, type LoanScheme } from "@/lib/schemes";
 import { MAX_DOCUMENT_SIZE_BYTES, MAX_LOAN_ATTACHMENTS, uploadSelectedFiles } from "@/lib/uploads";
 
 type LoanCreationFormProps = {
@@ -160,7 +161,6 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
         setExistingLoans(nextLoans);
         setAvailableSchemes(nextSchemes);
         setSequenceMap(buildHighestSequenceMap(nextLoans.map((loan) => loan.accountNumber)));
-        setSearchName(nextCustomers[0]?.fullName ?? "");
         setStatusMessage("Loan form is connected to Supabase. Customer lookup, scheme lookup, and loan save are live.");
       } catch {
         if (isMounted) {
@@ -178,7 +178,6 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
 
   const selectedCustomer = useMemo(() => {
     return customers.find((customer) => {
-      const matchesCompany = customer.company === selectedCompany;
       const matchesName = searchName
         ? customer.fullName.toLowerCase().includes(searchName.toLowerCase())
         : true;
@@ -189,9 +188,11 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
         ? customer.customerCode.includes(searchCustomerCode)
         : true;
 
-      return matchesCompany && matchesName && matchesPhone && matchesCode;
+      return matchesName && matchesPhone && matchesCode;
     }) ?? null;
-  }, [customers, searchCustomerCode, searchName, searchPhone, selectedCompany]);
+  }, [customers, searchCustomerCode, searchName, searchPhone]);
+
+  const selectedScheme = useMemo(() => availableSchemes.find((item) => item.id === scheme) ?? null, [availableSchemes, scheme]);
 
   const financialYearPrefix = getFinancialYearPrefix(loanDate);
   const generatedAccountNumber = `${financialYearPrefix}/${(sequenceMap[financialYearPrefix] ?? 0) + 1}`;
@@ -205,6 +206,11 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
   }, [currentAccountNumber, financialYearPrefix, sequenceMap]);
 
   const daysInSelectedMonth = useMemo(() => getDaysInMonth(loanDate), [loanDate]);
+  const schemeBasedInterestPercent = useMemo(
+    () => resolveSchemeInterestPercent(selectedScheme, daysInSelectedMonth),
+    [daysInSelectedMonth, selectedScheme],
+  );
+  const effectiveInterestPercent = scheme ? schemeBasedInterestPercent ?? 0 : Number(interestPercent) || 0;
 
   const monthlyInterest = useMemo(() => {
     const loanDateValue = parseAppDate(loanDate);
@@ -214,6 +220,11 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
 
     const monthStart = formatIsoDate(new Date(loanDateValue.getFullYear(), loanDateValue.getMonth(), 1));
     const monthEnd = formatIsoDate(new Date(loanDateValue.getFullYear(), loanDateValue.getMonth() + 1, 0));
+
+    if (selectedScheme) {
+      return calculateSchemeInterestForRange(Number(loanAmount) || 0, selectedScheme, monthStart, monthEnd).amount;
+    }
+
     const rangeInterest = calculateSimpleInterestForRange(
       Number(loanAmount) || 0,
       Number(interestPercent) || 0,
@@ -221,7 +232,7 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
       monthEnd,
     );
     return rangeInterest.amount;
-  }, [interestPercent, loanAmount, loanDate]);
+  }, [interestPercent, loanAmount, loanDate, selectedScheme]);
 
   const yearlyInterest = useMemo(() => monthlyInterest * 12, [monthlyInterest]);
 
@@ -249,10 +260,8 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
 
   function handleSchemeChange(value: string) {
     setScheme(value);
-    const selectedScheme = availableSchemes.find((item) => item.id === value);
-    const firstSlabRate = selectedScheme?.slabs[0]?.interestPercent;
-    if (firstSlabRate) {
-      setInterestPercent(firstSlabRate);
+    if (!value) {
+      setInterestPercent("1.00");
     }
   }
 
@@ -303,8 +312,8 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
         loanDate,
         loanType,
         loanAmount: Number(loanAmount) || 0,
-        schemeName: availableSchemes.find((item) => item.id === scheme)?.name || undefined,
-        interestPercent: Number(interestPercent) || 0,
+        schemeName: selectedScheme?.name || undefined,
+        interestPercent: effectiveInterestPercent,
         sourceAccount,
         supportingDocuments: uploadedDocumentPaths,
         jewelItems:
@@ -402,6 +411,7 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
               )}
             </div>
             <p className="mt-4 text-sm font-semibold text-[var(--color-ink)]">Customer Photo</p>
+            <p className="mt-2 text-xs text-[var(--color-muted)]">Global customer master lookup</p>
           </div>
 
           <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
@@ -425,7 +435,7 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
 
             <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Matched Customer</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{selectedCustomer?.fullName ?? "No customer matched"}</p></div>
             <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Saved Phone</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{selectedCustomer?.phoneNumber ?? "-"}</p></div>
-            <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Saved Customer ID</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{selectedCustomer?.customerCode ?? "-"}</p></div>
+            <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Customer Company</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{selectedCustomer?.company ?? "-"}</p></div>
             <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3 md:col-span-2"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Current Address</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{selectedCustomer?.currentAddress ?? "-"}</p></div>
             <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3 md:col-span-2 xl:col-span-1"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Permanent Address</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{selectedCustomer?.permanentAddress ?? "-"}</p></div>
             <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3 md:col-span-2 xl:col-span-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Aadhaar / Area</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{selectedCustomer ? `${selectedCustomer.aadhaarNumber ?? "-"}  |  ${selectedCustomer.area}` : "-"}</p></div>
@@ -460,9 +470,9 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
           <label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Company</span><input value={selectedCompany} readOnly className="w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-page)] px-4 py-3 text-[var(--color-muted)]" /></label>
           <label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Loan Amount</span><input value={loanAmount} onChange={(event) => setLoanAmount(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label>
           <label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Scheme</span><select value={scheme} onChange={(event) => handleSchemeChange(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]"><option value="">Select later</option>{availableSchemes.map((item) => (<option key={item.id} value={item.id}>{item.name}</option>))}</select></label>
-          <label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Interest %</span><input value={interestPercent} onChange={(event) => setInterestPercent(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label>
+          <label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Interest %</span><input value={scheme ? (schemeBasedInterestPercent ? schemeBasedInterestPercent.toFixed(2) : "") : interestPercent} onChange={(event) => setInterestPercent(event.target.value)} readOnly={Boolean(scheme)} className={`w-full rounded-2xl border border-[var(--color-border)] px-4 py-3 outline-none transition focus:border-[var(--color-accent)] ${scheme ? "bg-[var(--color-page)] text-[var(--color-muted)]" : "bg-white"}`} /></label>
           <label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">Disbursal source</span><select value={sourceAccount} onChange={(event) => setSourceAccount(event.target.value as (typeof sourceAccounts)[number])} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]">{sourceAccounts.map((item) => (<option key={item} value={item}>{item}</option>))}</select></label>
-          <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Interest per month</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">Rs {monthlyInterest.toFixed(2)}</p><p className="mt-1 text-xs text-[var(--color-muted)]">Simple interest for {daysInSelectedMonth} days in selected month</p></div>
+          <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Interest per month</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">Rs {monthlyInterest.toFixed(2)}</p><p className="mt-1 text-xs text-[var(--color-muted)]">{scheme ? `Scheme slab applied for ${daysInSelectedMonth} day(s).` : `Simple interest for ${daysInSelectedMonth} days in selected month`}</p></div>
           <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Interest per year</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">Rs {yearlyInterest.toFixed(2)}</p></div>
           <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Selected loan date</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{toDisplayDateFromIso(loanDate)}</p></div>
         </div>
@@ -496,5 +506,3 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
     </form>
   );
 }
-
-

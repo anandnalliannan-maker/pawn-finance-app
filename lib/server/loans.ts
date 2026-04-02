@@ -1,4 +1,4 @@
-import { formatDisplayDate, parseAppDate } from "@/lib/date-utils";
+﻿import { formatDisplayDate, parseAppDate } from "@/lib/date-utils";
 import type { CreateLoanPayload, LoanPaymentRecord, LoanRecord } from "@/lib/loans";
 import { canAccessCompanyId, type AppSession } from "@/lib/server/auth";
 import { postLedgerEntry } from "@/lib/server/ledger";
@@ -345,9 +345,6 @@ export async function createLoan(session: AppSession, payload: CreateLoanPayload
     throw new Error("Selected customer was not found.");
   }
 
-  if (customer.company_id !== company.id) {
-    throw new Error("Customer does not belong to the selected company.");
-  }
 
   const { data: duplicateLoan, error: duplicateError } = await supabase
     .from("loans")
@@ -544,6 +541,7 @@ export async function closeLoan(session: AppSession, loanId: string) {
 
   return getLoanDetailById(session, loanId);
 }
+
 
 
 
