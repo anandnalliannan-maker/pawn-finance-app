@@ -1,4 +1,4 @@
-﻿alter table public.customers
+alter table public.customers
   add column if not exists id_proof_document_paths jsonb not null default '[]'::jsonb;
 
 alter table public.loans
