@@ -10,6 +10,7 @@ type LedgerRow = {
   entry_date: string;
   category:
     | "incoming_payment"
+    | "funds_in"
     | "outgoing_loan"
     | "deposit_received"
     | "deposit_payout"
@@ -42,6 +43,7 @@ type VoucherRow = {
 type LedgerSourceType =
   | "loan_disbursal"
   | "loan_payment"
+  | "funds_in"
   | "deposit_received"
   | "deposit_payout"
   | "voucher"
@@ -52,6 +54,7 @@ type LedgerInsertInput = {
   entryDate: string;
   category:
     | "incoming_payment"
+    | "funds_in"
     | "outgoing_loan"
     | "deposit_received"
     | "deposit_payout"
@@ -92,6 +95,8 @@ function toLedgerCategory(value: LedgerRow["category"]): LedgerCategory {
   switch (value) {
     case "incoming_payment":
       return "Incoming Payment";
+    case "funds_in":
+      return "Funds In";
     case "outgoing_loan":
       return "Outgoing Loan";
     case "deposit_received":

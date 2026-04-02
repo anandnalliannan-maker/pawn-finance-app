@@ -193,7 +193,7 @@ export function CashBookView() {
           <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">Movement Summary</p>
           <div className="mt-6 space-y-4">
             <MovementRow label="Loan disbursals and expenses" amount={totalOutgoing} description="Cash moved out through loans, vouchers, deposit payouts, and branch spends." />
-            <MovementRow label="Collections and incoming funds" amount={totalIncoming} description="Cash received from loan payments and outside deposits." incoming />
+            <MovementRow label="Collections and incoming funds" amount={totalIncoming} description="Cash received from loan payments, outside deposits, and funds introduced into the business." incoming />
             <MovementRow label="Net cash movement" amount={totalIncoming - totalOutgoing} description="Incoming minus outgoing for the selected date." highlight />
             <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-4 text-sm text-[var(--color-muted)]"><p className="font-medium text-[var(--color-ink)]">Company filter</p><p className="mt-1">{companyFilter || "Showing all companies"}</p><p className="mt-4 font-medium text-[var(--color-ink)]">Book date</p><p className="mt-1">{displayDate || formatDisplayDate(new Date())}</p></div>
           </div>
@@ -254,4 +254,5 @@ function MovementRow({ label, amount, description, incoming = false, highlight =
 
   return <div className={`rounded-[24px] border px-4 py-4 ${rowClass}`}><div className="flex items-center justify-between gap-4"><div><p className="text-sm font-semibold text-[var(--color-ink)]">{label}</p><p className="mt-1 text-sm text-[var(--color-muted)]">{description}</p></div><p className="text-base font-semibold text-[var(--color-ink)]">{formatCurrency(amount)}</p></div></div>;
 }
+
 

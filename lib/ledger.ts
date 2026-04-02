@@ -1,5 +1,6 @@
 export type LedgerCategory =
   | "Incoming Payment"
+  | "Funds In"
   | "Outgoing Loan"
   | "Deposit Received"
   | "Deposit Payout"
@@ -52,6 +53,7 @@ export const voucherCategories: VoucherCategory[] = [
 export const ledgerCategories: Array<LedgerCategory | "All"> = [
   "All",
   "Incoming Payment",
+  "Funds In",
   "Outgoing Loan",
   "Deposit Received",
   "Deposit Payout",
