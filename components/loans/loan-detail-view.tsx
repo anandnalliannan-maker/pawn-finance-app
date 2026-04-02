@@ -12,6 +12,7 @@ import {
   HandCoins,
   Save,
   UserRound,
+  Printer,
   X,
 } from "lucide-react";
 
@@ -49,9 +50,19 @@ type AdjustmentDraft = {
   reason: string;
   acknowledgedBy: string;
 };
+type ReceiptState = { kind: "loan" } | { kind: "payment"; paymentId: string };
 
 function formatCurrency(value: number) {
   return `Rs ${value.toFixed(2)}`;
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll(`\"`, "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 function toAmount(value: string) {
@@ -108,6 +119,7 @@ export function LoanDetailView({ loan }: LoanDetailViewProps) {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showCloseLoanModal, setShowCloseLoanModal] = useState(false);
   const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
+  const [receiptState, setReceiptState] = useState<ReceiptState | null>(null);
   const [closeAcknowledged, setCloseAcknowledged] = useState(false);
   const [availableSchemes, setAvailableSchemes] = useState<LoanScheme[]>([]);
   const [paymentDraft, setPaymentDraft] = useState<PaymentDraft>(() => buildInitialDraft(loan, loan.originalLoanAmount));
@@ -131,6 +143,9 @@ export function LoanDetailView({ loan }: LoanDetailViewProps) {
   const interestCleared = isInterestPaidUptoDateFromEffectivePayments(effectivePayments);
   const canCloseLoan = outstandingLoan === 0 && interestCleared;
   const selectedPayment = loanState.payments.find((payment) => payment.id === selectedPaymentId) ?? null;
+  const receiptPayment = receiptState?.kind === "payment"
+    ? effectivePayments.find((payment) => payment.id === receiptState.paymentId) ?? null
+    : null;
   const selectedScheme = useMemo(
     () => availableSchemes.find((scheme) => scheme.name === loanState.schemeName) ?? null,
     [availableSchemes, loanState.schemeName],
@@ -243,6 +258,18 @@ export function LoanDetailView({ loan }: LoanDetailViewProps) {
     setShowCloseLoanModal(false);
   }
 
+  function openLoanReceipt() {
+    setReceiptState({ kind: "loan" });
+  }
+
+  function openPaymentReceipt(paymentId: string) {
+    setReceiptState({ kind: "payment", paymentId });
+  }
+
+  function closeReceiptModal() {
+    setReceiptState(null);
+  }
+
   function handleDraftChange(field: keyof PaymentDraft, value: string) {
     setPaymentDraft((current) => ({ ...current, [field]: value }));
   }
@@ -253,6 +280,55 @@ export function LoanDetailView({ loan }: LoanDetailViewProps) {
       interestPayment: suggestedInterest.amount > 0 ? suggestedInterest.amount.toFixed(2) : "",
       interestMode: "add",
     }));
+  }
+
+  function printReceipt() {
+    const receiptTitle = receiptState?.kind === "payment" ? "Payment Receipt" : "Loan Receipt";
+    const receiptRows = receiptState?.kind === "payment" && receiptPayment
+      ? [
+          ["Receipt type", "Payment Receipt"],
+          ["Account no.", loanState.accountNumber],
+          ["Customer", loanState.customerName],
+          ["Phone", loanState.phoneNumber],
+          ["Company", loanState.company],
+          ["Payment date", receiptPayment.paymentDate],
+          ["Interest from", receiptPayment.effectivePaymentFrom],
+          ["Interest upto", receiptPayment.effectivePaymentUpto],
+          ["Principal received", formatCurrency(receiptPayment.netPrincipalPayment)],
+          ["Interest received", formatCurrency(receiptPayment.netInterestPayment)],
+          ["Outstanding loan", formatCurrency(outstandingLoan)],
+        ]
+      : [
+          ["Receipt type", "Loan Receipt"],
+          ["Account no.", loanState.accountNumber],
+          ["Customer", loanState.customerName],
+          ["Customer ID", loanState.customerCode],
+          ["Phone", loanState.phoneNumber],
+          ["Company", loanState.company],
+          ["Loan type", loanState.loanType],
+          ["Loan date", loanState.loanDate],
+          ["Original loan", formatCurrency(loanState.originalLoanAmount)],
+          ["Outstanding loan", formatCurrency(outstandingLoan)],
+          ["Status", loanState.status],
+        ];
+
+    const rowsMarkup = receiptRows
+      .map(([label, value]) => `<tr><td style="padding:10px 12px;border:1px solid #d6c7b2;font-weight:600;color:#2e261d;">${escapeHtml(label)}</td><td style="padding:10px 12px;border:1px solid #d6c7b2;color:#5b5143;">${escapeHtml(value)}</td></tr>`)
+      .join("");
+
+    const popup = window.open("", "_blank", "width=900,height=700");
+    if (!popup) {
+      setStatusMessage("Unable to open the print window. Please allow popups for receipts.");
+      return;
+    }
+
+    const html = `<!doctype html><html><head><title>${receiptTitle}</title><style>body{font-family:Arial,sans-serif;background:#f7f1e7;margin:0;padding:24px;color:#2e261d;} .sheet{max-width:760px;margin:0 auto;background:#fff;border:1px solid #d6c7b2;border-radius:20px;padding:28px;box-shadow:0 18px 40px rgba(46,38,29,0.08);} h1{margin:0;font-size:28px;} p{margin:6px 0 0;color:#6d6252;} table{width:100%;border-collapse:collapse;margin-top:24px;} .footer{margin-top:24px;display:flex;justify-content:space-between;gap:20px;font-size:13px;color:#6d6252;} .sign{margin-top:48px;border-top:1px solid #d6c7b2;padding-top:10px;width:220px;text-align:center;} @media print { body{background:#fff;padding:0;} .sheet{box-shadow:none;border:none;padding:0;} }</style></head><body><div class="sheet"><div><p style="text-transform:uppercase;letter-spacing:0.18em;color:#a85a14;font-weight:700;font-size:12px;">Pawn Finance Receipt</p><h1>${escapeHtml(receiptTitle)}</h1><p>${escapeHtml(loanState.company)}</p></div><table><tbody>${rowsMarkup}</tbody></table><div class="footer"><div><strong>Generated on:</strong> ${escapeHtml(new Date().toLocaleString())}</div><div><strong>Status:</strong> ${escapeHtml(loanState.status)}</div></div><div class="sign">Authorized Signature</div></div></body></html>`;
+
+    popup.document.open();
+    popup.document.write(html);
+    popup.document.close();
+    popup.focus();
+    popup.print();
   }
 
   function handleAdjustmentDraftChange(field: keyof AdjustmentDraft, value: string) {
@@ -403,10 +479,13 @@ export function LoanDetailView({ loan }: LoanDetailViewProps) {
               <h1 className="mt-2 text-3xl font-semibold text-[var(--color-ink)]">{loanState.accountNumber}</h1>
               <p className="mt-2 text-sm text-[var(--color-muted)]">{loanState.loanType} | {loanState.company}</p>
             </div>
+
+      {receiptState ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(26,24,20,0.46)] p-4"><div className="w-full max-w-2xl rounded-[30px] border border-[var(--color-border)] bg-[var(--color-panel)] p-6 shadow-[0_32px_80px_rgba(26,24,20,0.22)] sm:p-8"><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">Printable Receipt</p><h2 className="mt-2 text-2xl font-semibold text-[var(--color-ink)]">{receiptState.kind === "payment" ? "Payment Receipt" : "Loan Receipt"}</h2><p className="mt-2 text-sm text-[var(--color-muted)]">{loanState.accountNumber} | {loanState.customerName}</p></div><button type="button" onClick={closeReceiptModal} className="rounded-2xl border border-[var(--color-border)] bg-white p-3 text-[var(--color-muted)] transition hover:text-[var(--color-ink)]" aria-label="Close receipt popup"><X className="h-4 w-4" /></button></div><div className="mt-6 rounded-[28px] border border-[var(--color-border)] bg-white p-5"><div className="flex items-start justify-between gap-4 border-b border-[var(--color-border)] pb-4"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-accent)]">Pawn Finance Receipt</p><h3 className="mt-2 text-xl font-semibold text-[var(--color-ink)]">{loanState.company}</h3><p className="mt-1 text-sm text-[var(--color-muted)]">{receiptState.kind === "payment" ? "Payment collection receipt" : "Loan account receipt"}</p></div><div className="rounded-2xl bg-[var(--color-panel-strong)] px-4 py-3 text-sm font-medium text-[var(--color-ink)]">{receiptState.kind === "payment" ? receiptPayment?.paymentDate : loanState.loanDate}</div></div><div className="mt-5 grid gap-4 sm:grid-cols-2">{receiptState.kind === "payment" && receiptPayment ? <><InfoCard label="Account no." value={loanState.accountNumber} /><InfoCard label="Customer" value={loanState.customerName} /><InfoCard label="Company" value={loanState.company} /><InfoCard label="Phone" value={loanState.phoneNumber} /><InfoCard label="Interest from" value={receiptPayment.effectivePaymentFrom} /><InfoCard label="Interest upto" value={receiptPayment.effectivePaymentUpto} /><InfoCard label="Principal received" value={formatCurrency(receiptPayment.netPrincipalPayment)} /><InfoCard label="Interest received" value={formatCurrency(receiptPayment.netInterestPayment)} /><InfoCard label="Outstanding loan" value={formatCurrency(outstandingLoan)} /><InfoCard label="Status" value={loanState.status} /></> : <><InfoCard label="Account no." value={loanState.accountNumber} /><InfoCard label="Customer" value={loanState.customerName} /><InfoCard label="Customer ID" value={loanState.customerCode} /><InfoCard label="Phone" value={loanState.phoneNumber} /><InfoCard label="Company" value={loanState.company} /><InfoCard label="Loan type" value={loanState.loanType} /><InfoCard label="Original loan" value={formatCurrency(loanState.originalLoanAmount)} /><InfoCard label="Outstanding loan" value={formatCurrency(outstandingLoan)} /><InfoCard label="Scheme" value={loanState.schemeName || "Manual interest"} /><InfoCard label="Status" value={loanState.status} /></>}</div><div className="mt-6 flex items-center justify-between border-t border-[var(--color-border)] pt-5 text-sm text-[var(--color-muted)]"><span>Generated on {new Date().toLocaleString()}</span><span>Authorized Signature</span></div></div><div className="mt-6 flex justify-end gap-3"><button type="button" onClick={closeReceiptModal} className="rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-ink)] transition hover:border-[var(--color-accent)]">Close</button><button type="button" onClick={printReceipt} className="inline-flex items-center gap-2 rounded-2xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--color-accent-strong)]"><Printer className="h-4 w-4" />Print receipt</button></div></div></div> : null}
             <div className="flex flex-wrap gap-3">
               <div className="rounded-2xl bg-[var(--color-panel-strong)] px-4 py-3 text-sm font-medium text-[var(--color-ink)]">Original loan: {formatCurrency(loanState.originalLoanAmount)}</div>
               <div className="rounded-2xl bg-[var(--color-sidebar)] px-4 py-3 text-sm font-medium text-white">Outstanding loan: {formatCurrency(outstandingLoan)}</div>
               <button type="button" onClick={openPaymentModal} className="inline-flex items-center gap-2 rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[var(--color-accent-strong)]"><CircleDollarSign className="h-4 w-4" />Make payment</button>
+              <button type="button" onClick={openLoanReceipt} className="inline-flex items-center gap-2 rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-ink)] transition hover:border-[var(--color-accent)]"><Printer className="h-4 w-4 text-[var(--color-accent)]" />Loan receipt</button>
               <button type="button" onClick={() => openAdjustmentModal()} className="inline-flex items-center gap-2 rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-ink)] transition hover:border-[var(--color-accent)]"><ClipboardPenLine className="h-4 w-4 text-[var(--color-accent)]" />Adjustment</button>
               <button type="button" onClick={openCloseLoanModal} className="inline-flex items-center gap-2 rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-ink)] transition hover:border-[var(--color-accent)]"><CheckCircle2 className="h-4 w-4 text-[var(--color-accent)]" />Close loan</button>
             </div>
@@ -459,6 +538,7 @@ export function LoanDetailView({ loan }: LoanDetailViewProps) {
             </div>
             <div className="flex flex-wrap gap-3">
               <button type="button" onClick={openPaymentModal} className="inline-flex items-center gap-2 rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-ink)] transition hover:border-[var(--color-accent)]"><HandCoins className="h-4 w-4 text-[var(--color-accent)]" />Make payment</button>
+              <button type="button" onClick={openLoanReceipt} className="inline-flex items-center gap-2 rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-ink)] transition hover:border-[var(--color-accent)]"><Printer className="h-4 w-4 text-[var(--color-accent)]" />Loan receipt</button>
               <button type="button" onClick={() => openAdjustmentModal()} className="inline-flex items-center gap-2 rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-ink)] transition hover:border-[var(--color-accent)]"><ClipboardPenLine className="h-4 w-4 text-[var(--color-accent)]" />Adjustment</button>
               <button type="button" onClick={openCloseLoanModal} className="inline-flex items-center gap-2 rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-ink)] transition hover:border-[var(--color-accent)]"><CheckCircle2 className="h-4 w-4 text-[var(--color-accent)]" />Close loan</button>
             </div>
@@ -490,7 +570,7 @@ export function LoanDetailView({ loan }: LoanDetailViewProps) {
                     <td className="px-4 py-3">{formatCurrency(payment.netPrincipalPayment)}</td>
                     <td className="px-4 py-3">{formatCurrency(payment.netInterestPayment)}</td>
                     <td className="px-4 py-3">{payment.adjustments.length ? <div className="space-y-1">{payment.adjustments.map((adjustment) => <p key={adjustment.id} className="text-xs leading-6">{adjustment.correctionType}: {formatAdjustmentDelta(adjustment.principalAdjustment)} / {formatAdjustmentDelta(adjustment.interestAdjustment)}</p>)}</div> : <span className="text-xs">No adjustment</span>}</td>
-                    <td className="px-4 py-3"><button type="button" onClick={() => openAdjustmentModal(payment)} className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-ink)] transition hover:border-[var(--color-accent)]"><ClipboardPenLine className="h-3.5 w-3.5 text-[var(--color-accent)]" />Adjust</button></td>
+                    <td className="px-4 py-3"><div className="flex flex-wrap gap-2"><button type="button" onClick={() => openAdjustmentModal(payment)} className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-ink)] transition hover:border-[var(--color-accent)]"><ClipboardPenLine className="h-3.5 w-3.5 text-[var(--color-accent)]" />Adjust</button><button type="button" onClick={() => openPaymentReceipt(payment.id)} className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-ink)] transition hover:border-[var(--color-accent)]"><Printer className="h-3.5 w-3.5 text-[var(--color-accent)]" />Receipt</button></div></td>
                   </tr>
                 )) : <tr><td colSpan={9} className="px-4 py-6 text-center text-sm text-[var(--color-muted)]">No payments recorded yet.</td></tr>}
               </tbody>
