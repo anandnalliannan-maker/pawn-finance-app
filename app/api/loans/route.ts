@@ -67,9 +67,14 @@ export async function POST(request: Request) {
   } catch (error) {
     const authResponse = buildAuthErrorResponse(error);
     if (authResponse) return authResponse;
+
+    const message = error instanceof Error ? error.message : "Unable to save loan.";
+    const status = message.includes("already exists") ? 409 : message.includes("was not found") ? 404 : message.includes("must") || message.includes("required") ? 400 : 500;
+
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to save loan." },
-      { status: 500 },
+      { error: message },
+      { status },
     );
   }
 }
+

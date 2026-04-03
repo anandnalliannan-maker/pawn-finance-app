@@ -14,6 +14,11 @@ export async function POST(_: Request, context: RouteContext<"/api/loans/[loanId
   } catch (error) {
     const authResponse = buildAuthErrorResponse(error);
     if (authResponse) return authResponse;
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to close loan." }, { status: 500 });
+
+    const message = error instanceof Error ? error.message : "Unable to close loan.";
+    const status = message.includes("cannot be closed") ? 400 : message.includes("was not found") ? 404 : 500;
+
+    return NextResponse.json({ error: message }, { status });
   }
 }
+
