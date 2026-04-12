@@ -1,8 +1,7 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Search } from "lucide-react";
 
 import { companyOptions, matchesCompanyFilter } from "@/lib/companies";
 import { isDateWithinRange } from "@/lib/date-utils";
@@ -11,7 +10,10 @@ import { getOutstandingLoanAmount, type LoanRecord } from "@/lib/loans";
 const loanGridClass = "lg:grid-cols-[minmax(180px,1.25fr)_minmax(220px,1.55fr)_minmax(130px,0.95fr)_minmax(150px,1fr)_minmax(140px,0.95fr)_minmax(150px,0.95fr)_minmax(120px,0.8fr)]";
 
 export default function SearchLoanPage() {
-  const [query, setQuery] = useState("");
+  const [nameFilter, setNameFilter] = useState("");
+  const [phoneFilter, setPhoneFilter] = useState("");
+  const [customerIdFilter, setCustomerIdFilter] = useState("");
+  const [areaFilter, setAreaFilter] = useState("");
   const [companyFilter, setCompanyFilter] = useState("");
   const [showActiveOnly, setShowActiveOnly] = useState(false);
   const [showJewelOnly, setShowJewelOnly] = useState(false);
@@ -54,21 +56,24 @@ export default function SearchLoanPage() {
   }, []);
 
   const filteredLoans = useMemo(() => {
+    const normalizedName = nameFilter.trim().toLowerCase();
+    const normalizedPhone = phoneFilter.replace(/\s+/g, "").trim();
+    const normalizedCustomerId = customerIdFilter.trim().toLowerCase();
+    const normalizedArea = areaFilter.trim().toLowerCase();
+
     return loans.filter((loan) => {
       const matchesCompany = matchesCompanyFilter(loan.company, companyFilter);
-      const matchesQuery = query
-        ? [loan.accountNumber, loan.customerName, loan.phoneNumber, loan.loanType, loan.company]
-            .join(" ")
-            .toLowerCase()
-            .includes(query.toLowerCase())
-        : true;
+      const matchesName = normalizedName ? loan.customerName.toLowerCase().includes(normalizedName) : true;
+      const matchesPhone = normalizedPhone ? loan.phoneNumber.replace(/\s+/g, "").includes(normalizedPhone) : true;
+      const matchesCustomerId = normalizedCustomerId ? loan.customerCode.toLowerCase().includes(normalizedCustomerId) : true;
+      const matchesArea = normalizedArea ? loan.area.toLowerCase().includes(normalizedArea) : true;
       const matchesActive = showActiveOnly ? loan.status === "Active" : true;
       const matchesJewel = showJewelOnly ? loan.loanType === "Jewel Loan" : true;
       const matchesDateRange = isDateWithinRange(loan.loanDate, fromDate, toDate);
 
-      return matchesCompany && matchesQuery && matchesActive && matchesJewel && matchesDateRange;
+      return matchesCompany && matchesName && matchesPhone && matchesCustomerId && matchesArea && matchesActive && matchesJewel && matchesDateRange;
     });
-  }, [query, companyFilter, showActiveOnly, showJewelOnly, fromDate, toDate, loans]);
+  }, [areaFilter, companyFilter, customerIdFilter, fromDate, loans, nameFilter, phoneFilter, showActiveOnly, showJewelOnly, toDate]);
 
   return (
     <div className="space-y-6">
@@ -78,25 +83,25 @@ export default function SearchLoanPage() {
         </p>
         <p className="mt-2 text-sm text-[var(--color-muted)]">{statusMessage}</p>
 
-        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(260px,1fr)_240px_auto_auto] xl:items-center">
-          <div className="flex items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-white px-4 py-4 text-sm text-[var(--color-muted)]">
-            <Search className="h-4 w-4" />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name, phone number, loan type, account number, or company" className="w-full bg-transparent outline-none" />
-          </div>
-          <label className="block space-y-2 xl:space-y-0">
-            <span className="sr-only">Company filter</span>
-            <select value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-4 text-sm outline-none transition focus:border-[var(--color-accent)]">
-              <option value="">Filter by company</option>
+        <div className="mt-4 grid gap-3 xl:grid-cols-[1.1fr_1fr_0.9fr_0.9fr_1fr]">
+          <FilterInput label="Name" value={nameFilter} onChange={setNameFilter} placeholder="Customer name" />
+          <FilterInput label="Phone no." value={phoneFilter} onChange={setPhoneFilter} placeholder="Phone number" />
+          <FilterInput label="Customer ID" value={customerIdFilter} onChange={setCustomerIdFilter} placeholder="Customer ID" />
+          <FilterInput label="Area" value={areaFilter} onChange={setAreaFilter} placeholder="Area" />
+          <label className="block space-y-2">
+            <span className="text-sm font-medium text-[var(--color-muted)]">Company</span>
+            <select value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]">
+              <option value="">All companies</option>
               {companyOptions.map((company) => <option key={company.code} value={company.name}>{company.name}</option>)}
             </select>
           </label>
-          <button type="button" onClick={() => setShowActiveOnly((current) => !current)} className={`rounded-2xl px-4 py-3 text-sm font-medium transition ${showActiveOnly ? "bg-[var(--color-sidebar)] text-white" : "border border-[var(--color-border)] bg-white text-[var(--color-ink)]"}`}>Active loans</button>
-          <button type="button" onClick={() => setShowJewelOnly((current) => !current)} className={`rounded-2xl px-4 py-3 text-sm font-medium transition ${showJewelOnly ? "bg-[var(--color-sidebar)] text-white" : "border border-[var(--color-border)] bg-white text-[var(--color-ink)]"}`}>Jewel loans</button>
         </div>
 
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
+        <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_1fr_auto_auto] xl:items-end">
           <label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">From date</span><input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label>
           <label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">To date</span><input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" /></label>
+          <button type="button" onClick={() => setShowActiveOnly((current) => !current)} className={`rounded-2xl px-4 py-3 text-sm font-medium transition ${showActiveOnly ? "bg-[var(--color-sidebar)] text-white" : "border border-[var(--color-border)] bg-white text-[var(--color-ink)]"}`}>Active loans</button>
+          <button type="button" onClick={() => setShowJewelOnly((current) => !current)} className={`rounded-2xl px-4 py-3 text-sm font-medium transition ${showJewelOnly ? "bg-[var(--color-sidebar)] text-white" : "border border-[var(--color-border)] bg-white text-[var(--color-ink)]"}`}>Jewel loans</button>
         </div>
       </section>
 
@@ -137,4 +142,8 @@ export default function SearchLoanPage() {
 
 function Cell({ label, value, subValue, strong = false }: { label: string; value: string; subValue?: string; strong?: boolean }) {
   return <div className="min-w-0"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)] lg:hidden">{label}</p><p className={strong ? "text-sm font-semibold leading-7 text-[var(--color-ink)]" : "text-sm leading-7 text-[var(--color-muted)]"}>{value}</p>{subValue ? <p className="mt-1 text-xs text-[var(--color-muted)]">{subValue}</p> : null}</div>;
+}
+
+function FilterInput({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder: string }) {
+  return <label className="block space-y-2"><span className="text-sm font-medium text-[var(--color-muted)]">{label}</span><input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]" /></label>;
 }

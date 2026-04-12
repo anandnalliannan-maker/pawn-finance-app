@@ -1,13 +1,15 @@
 ﻿"use client";
 
-import { Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { companyOptions, matchesCompanyFilter } from "@/lib/companies";
 import type { CustomerListItem } from "@/lib/customers";
 
 export function CustomerListPreview() {
-  const [query, setQuery] = useState("");
+  const [nameFilter, setNameFilter] = useState("");
+  const [phoneFilter, setPhoneFilter] = useState("");
+  const [customerIdFilter, setCustomerIdFilter] = useState("");
+  const [areaFilter, setAreaFilter] = useState("");
   const [companyFilter, setCompanyFilter] = useState("");
   const [customers, setCustomers] = useState<CustomerListItem[]>([]);
   const [statusMessage, setStatusMessage] = useState("Loading customer profiles from Supabase...");
@@ -42,30 +44,29 @@ export function CustomerListPreview() {
     };
   }, []);
 
-  const normalizedQuery = query.trim().toLowerCase();
   const filteredCustomers = useMemo(() => {
+    const normalizedName = nameFilter.trim().toLowerCase();
+    const normalizedPhone = phoneFilter.replace(/\s+/g, "").trim();
+    const normalizedCustomerId = customerIdFilter.trim().toLowerCase();
+    const normalizedArea = areaFilter.trim().toLowerCase();
+
     return customers.filter((customer) => {
       if (!matchesCompanyFilter(customer.company, companyFilter)) {
         return false;
       }
 
-      if (!normalizedQuery) {
-        return true;
-      }
+      const matchesName = normalizedName ? customer.fullName.toLowerCase().includes(normalizedName) : true;
+      const matchesPhone = normalizedPhone ? customer.phoneNumber.replace(/\s+/g, "").includes(normalizedPhone) : true;
+      const matchesCustomerId = normalizedCustomerId ? customer.customerCode.toLowerCase().includes(normalizedCustomerId) : true;
+      const matchesArea = normalizedArea ? customer.area.toLowerCase().includes(normalizedArea) : true;
 
-      return [
-        customer.customerCode,
-        customer.fullName,
-        customer.phoneNumber,
-        customer.aadhaarNumber ?? "",
-        customer.area,
-      ].some((value) => value.toLowerCase().includes(normalizedQuery));
+      return matchesName && matchesPhone && matchesCustomerId && matchesArea;
     });
-  }, [companyFilter, customers, normalizedQuery]);
+  }, [areaFilter, companyFilter, customerIdFilter, customers, nameFilter, phoneFilter]);
 
   return (
     <section className="app-panel rounded-[30px] p-6 sm:p-8">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+      <div className="flex flex-col gap-4">
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">
             Search Customer
@@ -73,26 +74,25 @@ export function CustomerListPreview() {
           <h2 className="mt-2 text-2xl font-semibold text-[var(--color-ink)]">Find and review customer records</h2>
           <p className="mt-2 text-sm text-[var(--color-muted)]">{statusMessage}</p>
         </div>
-        <div className="grid w-full gap-3 xl:max-w-[760px] xl:grid-cols-[1.2fr_0.8fr]">
-          <label className="flex items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm text-[var(--color-muted)]">
-            <Search className="h-4 w-4" />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search by name, phone, customer ID, Aadhaar, or area"
-              className="w-full bg-transparent outline-none"
-            />
+
+        <div className="grid gap-3 xl:grid-cols-[1.15fr_1fr_0.9fr_0.9fr_1fr]">
+          <FilterInput label="Name" value={nameFilter} onChange={setNameFilter} placeholder="Customer name" />
+          <FilterInput label="Phone no." value={phoneFilter} onChange={setPhoneFilter} placeholder="Phone number" />
+          <FilterInput label="Customer ID" value={customerIdFilter} onChange={setCustomerIdFilter} placeholder="Customer ID" />
+          <FilterInput label="Area" value={areaFilter} onChange={setAreaFilter} placeholder="Area" />
+          <label className="block space-y-2">
+            <span className="text-sm font-medium text-[var(--color-muted)]">Company</span>
+            <select
+              value={companyFilter}
+              onChange={(event) => setCompanyFilter(event.target.value)}
+              className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"
+            >
+              <option value="">All companies</option>
+              {companyOptions.map((company) => (
+                <option key={company.code} value={company.name}>{company.name}</option>
+              ))}
+            </select>
           </label>
-          <select
-            value={companyFilter}
-            onChange={(event) => setCompanyFilter(event.target.value)}
-            className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"
-          >
-            <option value="">All companies</option>
-            {companyOptions.map((company) => (
-              <option key={company.code} value={company.name}>{company.name}</option>
-            ))}
-          </select>
         </div>
       </div>
 
@@ -130,5 +130,29 @@ export function CustomerListPreview() {
         </div>
       </div>
     </section>
+  );
+}
+
+function FilterInput({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <label className="block space-y-2">
+      <span className="text-sm font-medium text-[var(--color-muted)]">{label}</span>
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent)]"
+      />
+    </label>
   );
 }
