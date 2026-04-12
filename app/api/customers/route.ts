@@ -2,6 +2,7 @@
 
 import {
   buildCustomerStatus,
+  GLOBAL_CUSTOMER_MASTER_LABEL,
   normalizeAadhaar,
   normalizePhoneNumber,
   type CreateCustomerPayload,
@@ -33,14 +34,6 @@ type DuplicateCustomerRow = {
   phone_number_normalized: string | null;
   aadhaar_number_normalized: string | null;
 };
-
-function getCompanyName(companies: CompanyRelation) {
-  if (Array.isArray(companies)) {
-    return companies[0]?.name ?? "-";
-  }
-
-  return companies?.name ?? "-";
-}
 
 export async function GET() {
   try {
@@ -80,7 +73,7 @@ export async function GET() {
         aadhaarNumber: row.aadhaar_number ?? "-",
         profilePhotoPath: row.profile_photo_path,
         profilePhotoUrl: await getSignedAttachmentUrl(row.profile_photo_path),
-        company: getCompanyName(row.companies),
+        company: GLOBAL_CUSTOMER_MASTER_LABEL,
         status: buildCustomerStatus({
           profilePhotoPath: row.profile_photo_path,
           aadhaarNumber: row.aadhaar_number,
@@ -111,12 +104,12 @@ export async function POST(request: Request) {
 
     const fullName = payload.fullName?.trim();
     const phoneNumber = payload.phoneNumber?.trim();
-    const companyName = payload.companyName?.trim();
+    const companyName = session.companies[0]?.name ?? payload.companyName?.trim();
     const aadhaarNumber = payload.aadhaarNumber?.trim() || null;
 
-    if (!fullName || !phoneNumber || !companyName) {
+    if (!fullName || !phoneNumber) {
       return NextResponse.json(
-        { error: "Company, customer name, and phone number are required." },
+        { error: "Customer name and phone number are required." },
         { status: 400 },
       );
     }
@@ -240,7 +233,7 @@ export async function POST(request: Request) {
           aadhaarNumber: customer.aadhaar_number ?? "-",
           profilePhotoPath: customer.profile_photo_path,
           profilePhotoUrl: await getSignedAttachmentUrl(customer.profile_photo_path),
-          company: getCompanyName(customer.companies),
+          company: GLOBAL_CUSTOMER_MASTER_LABEL,
           status: buildCustomerStatus({
             profilePhotoPath: customer.profile_photo_path,
             aadhaarNumber: customer.aadhaar_number,
@@ -263,3 +256,5 @@ export async function POST(request: Request) {
     );
   }
 }
+
+

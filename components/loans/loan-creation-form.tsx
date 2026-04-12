@@ -15,7 +15,6 @@ import {
 import type { CreateLoanPayload, LoanRecord } from "@/lib/loans";
 import {
   buildHighestSequenceMap,
-  buildLoanAccountNumber,
   getLoanAccountSeriesPrefix,
   getSequenceFromAccountNumber,
 } from "@/lib/loan-account-number";
@@ -93,7 +92,7 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
   const [interestPercent, setInterestPercent] = useState("1.00");
   const [sequenceMap, setSequenceMap] = useState<Record<string, number>>({});
   const [availableSchemes, setAvailableSchemes] = useState<LoanScheme[]>([]);
-  const [accountNumberInput, setAccountNumberInput] = useState("");
+  const [accountSequenceInput, setAccountSequenceInput] = useState("");
   const [accountError, setAccountError] = useState("");
   const [statusMessage, setStatusMessage] = useState("Loading customer and loan data from Supabase...");
   const [accountWasEdited, setAccountWasEdited] = useState(false);
@@ -183,15 +182,16 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
   const selectedScheme = useMemo(() => availableSchemes.find((item) => item.id === scheme) ?? null, [availableSchemes, scheme]);
 
   const accountSeriesPrefix = getLoanAccountSeriesPrefix(selectedCompany, loanDate);
-  const generatedAccountNumber = buildLoanAccountNumber(selectedCompany, loanDate, (sequenceMap[accountSeriesPrefix] ?? 0) + 1);
-  const currentAccountNumber = accountWasEdited ? accountNumberInput : generatedAccountNumber;
+  const generatedSequence = String((sequenceMap[accountSeriesPrefix] ?? 0) + 1);
+  const currentSequenceValue = accountWasEdited ? accountSequenceInput : generatedSequence;
+  const currentAccountNumber = currentSequenceValue ? `${accountSeriesPrefix}-${currentSequenceValue}` : `${accountSeriesPrefix}-`;
   const existingLoanNumbers = useMemo(() => existingLoans.map((loan) => loan.accountNumber), [existingLoans]);
 
   const nextAutoSequence = useMemo(() => {
-    const currentSequence = getSequenceFromAccountNumber(currentAccountNumber, accountSeriesPrefix) ?? 0;
+    const currentSequence = currentSequenceValue ? Number(currentSequenceValue) : 0;
     const highestExisting = sequenceMap[accountSeriesPrefix] ?? 0;
     return Math.max(currentSequence, highestExisting) + 1;
-  }, [accountSeriesPrefix, currentAccountNumber, sequenceMap]);
+  }, [accountSeriesPrefix, currentSequenceValue, sequenceMap]);
 
   const daysInSelectedMonth = useMemo(() => getDaysInMonth(loanDate), [loanDate]);
   const schemeBasedInterestPercent = useMemo(
@@ -223,13 +223,18 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
   }, [interestPercent, loanAmount, loanDate, selectedScheme]);
   const yearlyInterestPercent = useMemo(() => effectiveInterestPercent * 12, [effectiveInterestPercent]);
 
-  function handleAccountNumberChange(value: string) {
-    const digitsOnly = value.replace(/[^0-9]/g, "");
-    const normalized = digitsOnly ? `${accountSeriesPrefix}-${digitsOnly}` : `${accountSeriesPrefix}-`;
+  function handleAccountSequenceChange(value: string) {
+    const digitsOnly = value.replace(/[^0-9]/g, "").replace(/^0+(?=\d)/, "");
 
     setAccountWasEdited(true);
-    setAccountNumberInput(normalized);
+    setAccountSequenceInput(digitsOnly);
 
+    if (!digitsOnly) {
+      setAccountError("");
+      return;
+    }
+
+    const normalized = `${accountSeriesPrefix}-${digitsOnly}`;
     if (existingLoanNumbers.includes(normalized)) {
       setAccountError("This account number already exists.");
     } else {
@@ -240,7 +245,7 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
   function handleLoanDateChange(value: string) {
     setLoanDate(value);
     setAccountWasEdited(false);
-    setAccountNumberInput("");
+    setAccountSequenceInput("");
     setAccountError("");
   }
 
@@ -273,6 +278,13 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
 
     if (!selectedCustomer) {
       setStatusMessage("Select a saved customer before creating a loan.");
+      return;
+    }
+
+    if (!currentSequenceValue) {
+      const message = "Enter a valid account number sequence.";
+      setAccountError(message);
+      setStatusMessage(message);
       return;
     }
 
@@ -355,7 +367,7 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
       setScheme("");
       setInterestPercent("1.00");
       setAccountWasEdited(false);
-      setAccountNumberInput("");
+      setAccountSequenceInput("");
       setAccountError("");
       setJewelRows([buildJewelRow(1)]);
       setSupportingDocuments([]);
@@ -431,7 +443,7 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
 
             <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Matched Customer</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{selectedCustomer?.fullName ?? "No customer matched"}</p></div>
             <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Saved Phone</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{selectedCustomer?.phoneNumber ?? "-"}</p></div>
-            <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Customer Company</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{selectedCustomer?.company ?? "-"}</p></div>
+            <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Customer Master</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{selectedCustomer?.company ?? "-"}</p></div>
             <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3 md:col-span-2"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Current Address</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{selectedCustomer?.currentAddress ?? "-"}</p></div>
             <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3 md:col-span-2 xl:col-span-1"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Permanent Address</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{selectedCustomer?.permanentAddress ?? "-"}</p></div>
             <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3 md:col-span-2 xl:col-span-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Aadhaar / Area</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{selectedCustomer ? `${selectedCustomer.aadhaarNumber ?? "-"}  |  ${selectedCustomer.area}` : "-"}</p></div>
@@ -443,12 +455,15 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
         <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">Loan Details</p>
 
         <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-          <label className="block space-y-2 xl:col-span-2">
+          <div className="space-y-2 xl:col-span-2">
             <span className="text-sm font-medium text-[var(--color-muted)]">Acc no.</span>
-            <input value={currentAccountNumber} onChange={(event) => handleAccountNumberChange(event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" />
-            <p className="text-xs text-[var(--color-muted)]">Financial year prefix is fixed automatically from the selected date.</p>
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_140px]">
+              <input value={`${accountSeriesPrefix}-`} readOnly className="w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-page)] px-4 py-3 text-[var(--color-muted)]" />
+              <input value={currentSequenceValue} onChange={(event) => handleAccountSequenceChange(event.target.value)} inputMode="numeric" placeholder="Sequence" className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]" />
+            </div>
+            <p className="text-xs text-[var(--color-muted)]">Financial year and company prefix are fixed. Only the numeric sequence can be edited.</p>
             {accountError ? <p className="text-sm text-red-600">{accountError}</p> : <p className="text-xs text-[var(--color-muted)]">Next auto number: {`${accountSeriesPrefix}-${nextAutoSequence}`}</p>}
-          </label>
+          </div>
 
           <label className="block space-y-2">
             <span className="text-sm font-medium text-[var(--color-muted)]">Date</span>
@@ -509,3 +524,5 @@ export function LoanCreationForm({ selectedCompany }: LoanCreationFormProps) {
 function SummaryCard({ label, value }: { label: string; value: string }) {
   return <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3"><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">{label}</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{value}</p></div>;
 }
+
+

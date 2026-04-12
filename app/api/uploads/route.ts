@@ -1,5 +1,6 @@
 ﻿import { NextResponse } from "next/server";
 
+import { GLOBAL_CUSTOMER_UPLOAD_SCOPE } from "@/lib/customers";
 import {
   MAX_CUSTOMER_PHOTO_SIZE_BYTES,
   MAX_DOCUMENT_SIZE_BYTES,
@@ -32,7 +33,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Company is required for uploads." }, { status: 400 });
     }
 
-    if (!canAccessCompanyName(session, companyNameValue.trim())) {
+    const normalizedCompanyScope = companyNameValue.trim();
+
+    if (normalizedCompanyScope !== GLOBAL_CUSTOMER_UPLOAD_SCOPE && !canAccessCompanyName(session, normalizedCompanyScope)) {
       return NextResponse.json({ error: "You do not have access to the selected company." }, { status: 403 });
     }
 
@@ -65,7 +68,7 @@ export async function POST(request: Request) {
         ? "customer-documents"
         : "loan-documents";
 
-    const paths = await uploadAttachmentFiles(folder, companyNameValue.trim(), files);
+    const paths = await uploadAttachmentFiles(folder, normalizedCompanyScope, files);
     return NextResponse.json({ files: paths.map((path) => ({ path })) }, { status: 201 });
   } catch (error) {
     const authResponse = buildAuthErrorResponse(error);

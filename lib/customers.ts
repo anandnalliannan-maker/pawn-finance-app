@@ -1,4 +1,7 @@
-﻿export type CustomerListItem = {
+﻿export const GLOBAL_CUSTOMER_MASTER_LABEL = "All companies";
+export const GLOBAL_CUSTOMER_UPLOAD_SCOPE = "global-customers";
+
+export type CustomerListItem = {
   id: string;
   customerCode: string;
   fullName: string;
@@ -14,7 +17,7 @@
 };
 
 export type CreateCustomerPayload = {
-  companyName: string;
+  companyName?: string;
   fullName: string;
   phoneNumber: string;
   alternatePhoneNumber?: string;

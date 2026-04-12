@@ -4,7 +4,11 @@ import Image from "next/image";
 import { useMemo, useState } from "react";
 import { Camera, Paperclip, Save, X } from "lucide-react";
 
-import type { CreateCustomerPayload } from "@/lib/customers";
+import {
+  GLOBAL_CUSTOMER_MASTER_LABEL,
+  GLOBAL_CUSTOMER_UPLOAD_SCOPE,
+  type CreateCustomerPayload,
+} from "@/lib/customers";
 import {
   MAX_DOCUMENT_SIZE_BYTES,
   MAX_CUSTOMER_PHOTO_SIZE_BYTES,
@@ -86,6 +90,7 @@ function formatBytesLabel(value: number) {
 }
 
 export function CustomerRegistrationForm({ selectedCompany }: { selectedCompany: string }) {
+  void selectedCompany;
   const [formState, setFormState] = useState(initialState);
   const [sameAsCurrentAddress, setSameAsCurrentAddress] = useState(false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
@@ -94,7 +99,7 @@ export function CustomerRegistrationForm({ selectedCompany }: { selectedCompany:
   const [isSaving, setIsSaving] = useState(false);
   const [summary, setSummary] = useState<CustomerSummary | null>(null);
   const [statusMessage, setStatusMessage] = useState(
-    "Customer registration now supports photo and document attachments.",
+    "Customer registration saves into the shared customer master for all companies.",
   );
 
   const documentNames = useMemo(() => documentFiles.map((file) => file.name).join(", "), [documentFiles]);
@@ -152,7 +157,7 @@ export function CustomerRegistrationForm({ selectedCompany }: { selectedCompany:
     }
 
     setDocumentFiles(files);
-    setStatusMessage(files.length ? "ID proof documents selected." : "Customer registration now supports photo and document attachments.");
+    setStatusMessage(files.length ? "ID proof documents selected." : "Customer registration saves into the shared customer master for all companies.");
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -162,12 +167,15 @@ export function CustomerRegistrationForm({ selectedCompany }: { selectedCompany:
 
     try {
       const [profilePhotoPath, documentPaths] = await Promise.all([
-        photoFile ? uploadSelectedFiles("customer-photo", selectedCompany, [photoFile]).then((paths) => paths[0] ?? "") : Promise.resolve(""),
-        documentFiles.length ? uploadSelectedFiles("customer-document", selectedCompany, documentFiles) : Promise.resolve([] as string[]),
+        photoFile
+          ? uploadSelectedFiles("customer-photo", GLOBAL_CUSTOMER_UPLOAD_SCOPE, [photoFile]).then((paths) => paths[0] ?? "")
+          : Promise.resolve(""),
+        documentFiles.length
+          ? uploadSelectedFiles("customer-document", GLOBAL_CUSTOMER_UPLOAD_SCOPE, documentFiles)
+          : Promise.resolve([] as string[]),
       ]);
 
       const payload: CreateCustomerPayload = {
-        companyName: selectedCompany,
         fullName: formState.fullName,
         phoneNumber: formState.phoneNumber,
         alternatePhoneNumber: formState.alternatePhoneNumber,
@@ -217,111 +225,114 @@ export function CustomerRegistrationForm({ selectedCompany }: { selectedCompany:
   return (
     <>
       <form onSubmit={handleSubmit} className="app-panel rounded-[30px] p-6 sm:p-8">
-      <div className="flex flex-col gap-4 border-b border-[var(--color-border)] pb-6 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[var(--color-accent)]">
-            Customer Registration
-          </p>
-          <h2 className="mt-3 text-3xl font-semibold text-[var(--color-ink)]">
-            New customer
-          </h2>
+        <div className="flex flex-col gap-4 border-b border-[var(--color-border)] pb-6 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[var(--color-accent)]">
+              Customer Registration
+            </p>
+            <h2 className="mt-3 text-3xl font-semibold text-[var(--color-ink)]">
+              New customer
+            </h2>
+            <p className="mt-3 max-w-2xl text-sm text-[var(--color-muted)]">
+              This customer profile is shared across all companies and can be used during loan creation anywhere in the system.
+            </p>
+          </div>
+
+          <div className="flex items-start gap-3">
+            <div className="rounded-2xl bg-[var(--color-panel-strong)] px-4 py-3 text-sm text-[var(--color-muted)]">
+              Customer ID: Auto
+            </div>
+            <label className="group relative flex h-24 w-24 cursor-pointer items-center justify-center overflow-hidden rounded-2xl border border-dashed border-[var(--color-border)] bg-white text-[var(--color-accent)] transition hover:border-[var(--color-accent)] sm:h-28 sm:w-28">
+              {photoPreviewUrl ? (
+                <Image src={photoPreviewUrl} alt="Customer preview" fill sizes="112px" className="object-cover" unoptimized />
+              ) : (
+                <Camera className="h-8 w-8 transition group-hover:scale-105" />
+              )}
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(event) => handlePhotoChange(event.target.files?.[0] ?? null)}
+                className="hidden"
+              />
+            </label>
+          </div>
         </div>
 
-        <div className="flex items-start gap-3">
-          <div className="rounded-2xl bg-[var(--color-panel-strong)] px-4 py-3 text-sm text-[var(--color-muted)]">
-            Customer ID: Auto
-          </div>
-          <label className="group relative flex h-24 w-24 cursor-pointer items-center justify-center overflow-hidden rounded-2xl border border-dashed border-[var(--color-border)] bg-white text-[var(--color-accent)] transition hover:border-[var(--color-accent)] sm:h-28 sm:w-28">
-            {photoPreviewUrl ? (
-              <Image src={photoPreviewUrl} alt="Customer preview" fill sizes="112px" className="object-cover" unoptimized />
-            ) : (
-              <Camera className="h-8 w-8 transition group-hover:scale-105" />
-            )}
+        <div className="mt-8 space-y-8">
+          <section className="grid gap-5 md:grid-cols-2">
+            <label className="block space-y-2 md:col-span-2">
+              <span className="text-sm font-medium text-[var(--color-muted)]">Customer Master</span>
+              <input value={GLOBAL_CUSTOMER_MASTER_LABEL} readOnly className="w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-page)] px-4 py-3 text-[var(--color-muted)]" />
+            </label>
+            <FormField label="Customer Name" name="fullName" value={formState.fullName} onChange={handleChange} placeholder="Enter full name" />
+            <FormField label="Phone Number" name="phoneNumber" value={formState.phoneNumber} onChange={handleChange} placeholder="+91 98765 43210" />
+            <FormField label="Alternate Phone" name="alternatePhoneNumber" value={formState.alternatePhoneNumber} onChange={handleChange} placeholder="+91 90000 00000" />
+            <FormField label="Aadhaar Number" name="aadhaarNumber" value={formState.aadhaarNumber} onChange={handleChange} placeholder="XXXX XXXX XXXX" />
+            <label className="block space-y-2">
+              <span className="text-sm font-medium text-[var(--color-muted)]">Guardian Label</span>
+              <select value={formState.guardianLabel} onChange={(event) => handleChange("guardianLabel", event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]">
+                <option value="s/o">s/o</option>
+                <option value="d/o">d/o</option>
+                <option value="w/o">w/o</option>
+              </select>
+            </label>
+            <FormField label="Guardian Name" name="guardianName" value={formState.guardianName} onChange={handleChange} placeholder="Enter guardian name" />
+          </section>
+
+          <section className="grid gap-5 md:grid-cols-2">
+            <FormField label="Current Address" name="currentAddress" value={formState.currentAddress} onChange={handleChange} placeholder="Door no, street, locality" textarea />
+
+            <div className="space-y-3">
+              <label className="flex items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-page)] px-4 py-3 text-sm text-[var(--color-ink)]">
+                <input type="checkbox" checked={sameAsCurrentAddress} onChange={(event) => handleAddressToggle(event.target.checked)} className="h-4 w-4 rounded border-[var(--color-border)]" />
+                Permanent address same as current address
+              </label>
+
+              <FormField label="Permanent Address" name="permanentAddress" value={formState.permanentAddress} onChange={handleChange} placeholder="Permanent address" textarea />
+            </div>
+          </section>
+
+          <section className="grid gap-5 md:grid-cols-3">
+            <FormField label="Area" name="area" value={formState.area} onChange={handleChange} placeholder="Area / locality" />
+            <FormField label="Reference" name="referenceName" value={formState.referenceName} onChange={handleChange} placeholder="Reference contact" />
+            <FormField label="Remarks" name="remarks" value={formState.remarks} onChange={handleChange} placeholder="Internal remarks" textarea />
+          </section>
+
+          <section className="rounded-[24px] border border-[var(--color-border)] bg-white p-5">
+            <div className="flex items-center gap-3 text-[var(--color-ink)]">
+              <Paperclip className="h-4 w-4 text-[var(--color-accent)]" />
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--color-accent)]">ID Proof Attachment</p>
+            </div>
             <input
               type="file"
-              accept="image/*"
-              onChange={(event) => handlePhotoChange(event.target.files?.[0] ?? null)}
-              className="hidden"
+              multiple
+              accept="image/*,.pdf"
+              onChange={(event) => handleDocumentChange(Array.from(event.target.files ?? []))}
+              className="mt-4 block w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-page)] px-4 py-3 text-sm text-[var(--color-muted)]"
             />
-          </label>
+            <p className="mt-3 text-xs text-[var(--color-muted)]">Each file must be 500 KB or smaller.</p>
+            {documentNames ? <p className="mt-3 text-sm text-[var(--color-muted)]">{documentNames}</p> : null}
+          </section>
         </div>
-      </div>
 
-      <div className="mt-8 space-y-8">
-        <section className="grid gap-5 md:grid-cols-2">
-          <label className="block space-y-2 md:col-span-2">
-            <span className="text-sm font-medium text-[var(--color-muted)]">Company</span>
-            <input value={selectedCompany} readOnly className="w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-page)] px-4 py-3 text-[var(--color-muted)]" />
-          </label>
-          <FormField label="Customer Name" name="fullName" value={formState.fullName} onChange={handleChange} placeholder="Enter full name" />
-          <FormField label="Phone Number" name="phoneNumber" value={formState.phoneNumber} onChange={handleChange} placeholder="+91 98765 43210" />
-          <FormField label="Alternate Phone" name="alternatePhoneNumber" value={formState.alternatePhoneNumber} onChange={handleChange} placeholder="+91 90000 00000" />
-          <FormField label="Aadhaar Number" name="aadhaarNumber" value={formState.aadhaarNumber} onChange={handleChange} placeholder="XXXX XXXX XXXX" />
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-[var(--color-muted)]">Guardian Label</span>
-            <select value={formState.guardianLabel} onChange={(event) => handleChange("guardianLabel", event.target.value)} className="w-full rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 outline-none transition focus:border-[var(--color-accent)]">
-              <option value="s/o">s/o</option>
-              <option value="d/o">d/o</option>
-              <option value="w/o">w/o</option>
-            </select>
-          </label>
-          <FormField label="Guardian Name" name="guardianName" value={formState.guardianName} onChange={handleChange} placeholder="Enter guardian name" />
-        </section>
+        <div className="mt-8 flex flex-col gap-4 border-t border-[var(--color-border)] pt-6 lg:flex-row lg:items-center lg:justify-between">
+          <p className="max-w-3xl text-sm leading-7 text-[var(--color-muted)]">{statusMessage}</p>
 
-        <section className="grid gap-5 md:grid-cols-2">
-          <FormField label="Current Address" name="currentAddress" value={formState.currentAddress} onChange={handleChange} placeholder="Door no, street, locality" textarea />
-
-          <div className="space-y-3">
-            <label className="flex items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-page)] px-4 py-3 text-sm text-[var(--color-ink)]">
-              <input type="checkbox" checked={sameAsCurrentAddress} onChange={(event) => handleAddressToggle(event.target.checked)} className="h-4 w-4 rounded border-[var(--color-border)]" />
-              Permanent address same as current address
-            </label>
-
-            <FormField label="Permanent Address" name="permanentAddress" value={formState.permanentAddress} onChange={handleChange} placeholder="Permanent address" textarea />
-          </div>
-        </section>
-
-        <section className="grid gap-5 md:grid-cols-3">
-          <FormField label="Area" name="area" value={formState.area} onChange={handleChange} placeholder="Area / locality" />
-          <FormField label="Reference" name="referenceName" value={formState.referenceName} onChange={handleChange} placeholder="Reference contact" />
-          <FormField label="Remarks" name="remarks" value={formState.remarks} onChange={handleChange} placeholder="Internal remarks" textarea />
-        </section>
-
-        <section className="rounded-[24px] border border-[var(--color-border)] bg-white p-5">
-          <div className="flex items-center gap-3 text-[var(--color-ink)]">
-            <Paperclip className="h-4 w-4 text-[var(--color-accent)]" />
-            <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--color-accent)]">ID Proof Attachment</p>
-          </div>
-          <input
-            type="file"
-            multiple
-            accept="image/*,.pdf"
-            onChange={(event) => handleDocumentChange(Array.from(event.target.files ?? []))}
-            className="mt-4 block w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-page)] px-4 py-3 text-sm text-[var(--color-muted)]"
-          />
-          <p className="mt-3 text-xs text-[var(--color-muted)]">Each file must be 500 KB or smaller.</p>
-          {documentNames ? <p className="mt-3 text-sm text-[var(--color-muted)]">{documentNames}</p> : null}
-        </section>
-      </div>
-
-      <div className="mt-8 flex flex-col gap-4 border-t border-[var(--color-border)] pt-6 lg:flex-row lg:items-center lg:justify-between">
-        <p className="max-w-3xl text-sm leading-7 text-[var(--color-muted)]">{statusMessage}</p>
-
-        <button type="submit" disabled={isSaving} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-70">
-          <Save className="h-4 w-4" />
-          {isSaving ? "Saving..." : "Save Customer  F2"}
-        </button>
-      </div>
+          <button type="submit" disabled={isSaving} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-70">
+            <Save className="h-4 w-4" />
+            {isSaving ? "Saving..." : "Save Customer  F2"}
+          </button>
+        </div>
       </form>
 
-      {summary ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(26,24,20,0.46)] p-4"><div className="w-full max-w-xl rounded-[30px] border border-[var(--color-border)] bg-[var(--color-panel)] p-6 shadow-[0_32px_80px_rgba(26,24,20,0.22)] sm:p-8"><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">Customer Saved</p><h2 className="mt-2 text-2xl font-semibold text-[var(--color-ink)]">{summary.fullName}</h2><p className="mt-2 text-sm text-[var(--color-muted)]">This is a quick confirmation summary for staff reference.</p></div><button type="button" onClick={() => setSummary(null)} className="rounded-2xl border border-[var(--color-border)] bg-white p-3 text-[var(--color-muted)] transition hover:text-[var(--color-ink)]" aria-label="Close customer summary"><X className="h-4 w-4" /></button></div><div className="mt-6 grid gap-4 sm:grid-cols-2"><SummaryCard label="Customer ID" value={summary.customerCode} /><SummaryCard label="Phone" value={summary.phoneNumber} /><SummaryCard label="Company" value={summary.company} /><SummaryCard label="Area" value={summary.area} /><SummaryCard label="Aadhaar" value={summary.aadhaarNumber} className="sm:col-span-2" /></div><div className="mt-6 flex justify-end"><button type="button" onClick={() => setSummary(null)} className="rounded-2xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--color-accent-strong)]">Close</button></div></div></div> : null}
+      {summary ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(26,24,20,0.46)] p-4"><div className="w-full max-w-xl rounded-[30px] border border-[var(--color-border)] bg-[var(--color-panel)] p-6 shadow-[0_32px_80px_rgba(26,24,20,0.22)] sm:p-8"><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">Customer Saved</p><h2 className="mt-2 text-2xl font-semibold text-[var(--color-ink)]">{summary.fullName}</h2><p className="mt-2 text-sm text-[var(--color-muted)]">This is a quick confirmation summary for staff reference.</p></div><button type="button" onClick={() => setSummary(null)} className="rounded-2xl border border-[var(--color-border)] bg-white p-3 text-[var(--color-muted)] transition hover:text-[var(--color-ink)]" aria-label="Close customer summary"><X className="h-4 w-4" /></button></div><div className="mt-6 grid gap-4 sm:grid-cols-2"><SummaryCard label="Customer ID" value={summary.customerCode} /><SummaryCard label="Phone" value={summary.phoneNumber} /><SummaryCard label="Customer Master" value={summary.company} /><SummaryCard label="Area" value={summary.area} /><SummaryCard label="Aadhaar" value={summary.aadhaarNumber} className="sm:col-span-2" /></div><div className="mt-6 flex justify-end"><button type="button" onClick={() => setSummary(null)} className="rounded-2xl bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--color-accent-strong)]">Close</button></div></div></div> : null}
     </>
   );
 }
 
-
-
 function SummaryCard({ label, value, className = "" }: { label: string; value: string; className?: string }) {
   return <div className={`rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3 ${className}`}><p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">{label}</p><p className="mt-2 text-sm font-medium text-[var(--color-ink)]">{value}</p></div>;
 }
+
+
 
