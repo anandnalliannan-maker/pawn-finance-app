@@ -499,6 +499,9 @@ export function CustomerRegistrationForm({ selectedCompany }: CustomerRegistrati
                     onFocus={() => void ensureAreaOptionsLoaded()}
                     onChange={(event) => updateField("area", event.target.value)}
                     placeholder={isLoadingAreas ? "Loading saved areas..." : "Type area name"}
+                    autoComplete="off"
+                    name="customer-area-lookup"
+                    data-form-type="other"
                     className={inputClassName}
                   />
                   {filteredAreas.length > 0 ? (
@@ -537,6 +540,9 @@ export function CustomerRegistrationForm({ selectedCompany }: CustomerRegistrati
                       value={newAreaName}
                       onChange={(event) => setNewAreaName(event.target.value)}
                       placeholder="Enter area name"
+                      autoComplete="off"
+                      name="new-area-name"
+                      data-form-type="other"
                       className={inputClassName}
                     />
                     <button
