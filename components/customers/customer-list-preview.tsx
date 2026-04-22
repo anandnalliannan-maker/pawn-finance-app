@@ -51,7 +51,7 @@ export function CustomerListPreview() {
     const normalizedArea = areaFilter.trim().toLowerCase();
 
     return customers.filter((customer) => {
-      if (!matchesCompanyFilter(customer.company, companyFilter)) {
+      if (!matchesCompanyFilter(customer.company ?? "", companyFilter)) {
         return false;
       }
 
